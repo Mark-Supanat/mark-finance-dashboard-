@@ -236,8 +236,8 @@
       </div>
 
       <div class="card">
-        <h3>Recent Transactions</h3>
-        <div id="recentTx"></div>
+        <h3>Portfolio <span class="sub">แตะเพื่อแก้ไขยอดปัจจุบัน</span></h3>
+        <div class="acc-list" id="overviewPortfolioList"></div>
       </div>
     </div>
 
@@ -265,6 +265,16 @@
           <div class="form-row" id="transferFields" style="display:none;">
             <div><label class="field-label">จากบัญชี</label><select id="fFrom"></select></div>
             <div><label class="field-label">ไปบัญชี</label><select id="fTo"></select></div>
+          </div>
+          <div class="form-row" id="reserveEffectFields" style="display:none;">
+            <div>
+              <label class="field-label">ผลต่อ Reserve (ถ้ามี)</label>
+              <select id="fReserve"><option value="">ไม่เกี่ยวกับ Reserve</option></select>
+            </div>
+            <div>
+              <label class="field-label">ทิศทาง</label>
+              <select id="fReserveDir"><option value="add">เพิ่มเข้า Reserve (+)</option><option value="use">ใช้จาก Reserve (-)</option></select>
+            </div>
           </div>
           <button type="submit" class="submit" id="submitBtn">บันทึกรายการ</button>
         </form>
@@ -514,7 +524,7 @@ function renderOverview(){
   }).join('');
 
   renderAccountsList();
-  renderRecentTx();
+  renderOverviewPortfolioList();
 }
 
 function renderAccountsList(){
@@ -536,20 +546,24 @@ function renderAccountsList(){
   });
 }
 
-function renderRecentTx(){
-  const merged = [
-    ...txns.map(t=>({date:t.date, note:t.note||'-', cat:t.category, amount:t.amount, kind:t.type})),
-    ...transfers.map(tr=>({date:tr.date, note:'โอน: '+accName(tr.from)+' → '+accName(tr.to), cat:'โอนเงิน', amount:tr.amount, kind:'โอน'}))
-  ].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8);
-  document.getElementById('recentTx').innerHTML = merged.map(m=>{
-    let tagColor='slate', emoji='•', amtClass='expense', sign='-';
-    if(m.kind==='รับ'){ tagColor=(CAT_COLOR[m.cat]||['teal'])[0]; emoji=(CAT_COLOR[m.cat]||['','💰'])[1]||'💰'; amtClass='income'; sign='+'; }
-    else if(m.kind==='จ่าย'){ const c=CAT_COLOR[m.cat]||['slate','•']; tagColor=c[0]; emoji=c[1]; amtClass='expense'; sign='-'; }
-    else { tagColor='blue'; emoji='⇄'; amtClass='transfer'; sign=''; }
-    return '<div class="tx-item"><div class="tx-tag" style="background:var(--'+tagColor+'-soft);color:var(--'+tagColor+')">'+emoji+'</div>' +
-      '<div class="tx-main"><div class="tx-note">'+m.note+'</div><div class="tx-sub">'+m.date+' · '+m.cat+'</div></div>' +
-      '<div class="tx-amt '+amtClass+'">'+sign+'฿'+fmtAmt(m.amount)+'</div></div>';
-  }).join('') || '<div class="empty-note">ยังไม่มีรายการ</div>';
+function renderOverviewPortfolioList(){
+  const latest = alloc[alloc.length-1];
+  const wrap = document.getElementById('overviewPortfolioList');
+  if(!latest){ wrap.innerHTML = '<div class="empty-note">ยังไม่มีข้อมูลพอร์ต</div>'; return; }
+  wrap.innerHTML = ASSET_DEFS.map(d=>{
+    return '<div class="acc-card"><div class="acc-top"><div class="acc-icon" style="background:var(--'+d.color+')">'+d.name.slice(0,2).toUpperCase()+'</div>' +
+      '<div><div class="acc-name">'+d.name+'</div><div class="acc-purpose">ยอดปัจจุบันในพอร์ต</div></div></div>' +
+      '<div class="acc-bal">฿<input type="number" step="1" value="'+(latest[d.key]||0)+'" data-asset="'+d.key+'" class="ov-asset-input"></div></div>';
+  }).join('');
+  wrap.querySelectorAll('.ov-asset-input').forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      latest[inp.dataset.asset] = parseFloat(inp.value)||0;
+      recomputeTotal(latest);
+      const {error} = await sb.from('app_portfolio_allocations').update({[inp.dataset.asset]: latest[inp.dataset.asset], total: latest.total}).eq('id', latest.id);
+      if(error) showError('update portfolio: '+error.message);
+      renderOverview();
+    });
+  });
 }
 
 function accName(id){ const a=accounts.find(x=>x.id===id); return a?a.name:id; }
@@ -559,6 +573,8 @@ function populateAccountSelects(){
   const opts = accounts.map(a=>'<option value="'+a.id+'">'+a.name+'</option>').join('');
   document.getElementById('fFrom').innerHTML = opts;
   document.getElementById('fTo').innerHTML = opts;
+  const resOpts = '<option value="">ไม่เกี่ยวกับ Reserve</option>' + reserves.map(r=>'<option value="'+r.id+'">'+r.name+'</option>').join('');
+  document.getElementById('fReserve').innerHTML = resOpts;
 }
 
 document.getElementById('typeToggle').addEventListener('click', (e)=>{
@@ -570,6 +586,7 @@ document.getElementById('typeToggle').addEventListener('click', (e)=>{
   const isTransfer = selectedType==='โอน';
   document.getElementById('normalFields').style.display = isTransfer ? 'none' : 'flex';
   document.getElementById('transferFields').style.display = isTransfer ? 'flex' : 'none';
+  document.getElementById('reserveEffectFields').style.display = isTransfer ? 'flex' : 'none';
 });
 
 document.getElementById('txForm').addEventListener('submit', async (e)=>{
@@ -587,6 +604,18 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
     const {error} = await sb.from('app_transfers').insert({id:row.id, date:row.date, from_account:from, to_account:to, amount});
     if(error){ showError('insert transfer: '+error.message); submitBtn.disabled=false; return; }
     transfers.push(row);
+
+    const resId = document.getElementById('fReserve').value;
+    const resDir = document.getElementById('fReserveDir').value;
+    if(resId){
+      const r = reserves.find(x=>x.id===resId);
+      if(r){
+        const newCurrent = Math.max(0, r.current + (resDir==='add' ? amount : -amount));
+        const {error:resErr} = await sb.from('app_reserves').update({current:newCurrent}).eq('id', r.id);
+        if(resErr) showError('update reserve from transfer: '+resErr.message);
+        else r.current = newCurrent;
+      }
+    }
   }else{
     const category = document.getElementById('fCategory').value;
     const note = document.getElementById('fNote').value.trim();
@@ -596,7 +625,7 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
     txns.push(row);
   }
   activeMonth = monthKey(date);
-  renderActionTab(); renderOverview();
+  renderActionTab(); renderOverview(); renderPortfolioTab();
   document.getElementById('fAmount').value='';
   document.getElementById('fNote').value='';
   submitBtn.disabled=false;
@@ -841,22 +870,20 @@ function renderPortfolioTab(){
   renderPortfolioBars();
 
   document.getElementById('reserveManage').innerHTML = reserves.map(r=>{
-    const remaining = r.maxTopups - r.used;
     const pct = r.initial ? Math.round((r.current/r.initial)*100) : 0;
     return '<div class="reserve-card">' +
-      '<div class="reserve-top"><span class="reserve-name">'+r.name+'</span><span class="reserve-count">'+(r.maxTopups?remaining+'/'+r.maxTopups+' ครั้งที่เหลือ':'ไม่ได้ตั้งโควตา')+'</span></div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">ปัจจุบัน ฿'+fmtAmt(r.current)+' จากเริ่มต้น ฿'+fmtAmt(r.initial)+' · เติมครั้งละ ฿'+fmtAmt(r.topup)+'</div>' +
-      '<div class="reserve-track" style="margin-bottom:10px;"><div class="reserve-fill" style="width:'+pct+'%"></div></div>' +
-      '<button class="small-btn" data-res="'+r.id+'">ใช้ reserve 1 ครั้ง (เติมพอร์ต)</button></div>';
+      '<div class="reserve-top"><span class="reserve-name">'+r.name+'</span><span class="reserve-count">เริ่มต้น ฿'+fmtAmt(r.initial)+'</span></div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:6px;">คงเหลือปัจจุบัน ฿<input type="number" step="1" value="'+r.current+'" data-res="'+r.id+'" class="res-current-input" style="width:100px;padding:5px 7px;"></div>' +
+      '<div class="reserve-track"><div class="reserve-fill" style="width:'+Math.min(100,Math.max(0,pct))+'%"></div></div>' +
+      '<div style="font-size:10.5px;color:var(--muted);margin-top:6px;">ปรับได้จากที่นี่โดยตรง หรือให้ระบบปรับให้อัตโนมัติเมื่อบันทึกรายการ "โอนเงิน" ที่ผลต่อ Reserve ในหน้า Action</div></div>';
   }).join('');
-  document.querySelectorAll('[data-res]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      const r = reserves.find(x=>x.id===btn.dataset.res);
-      const newCurrent = Math.max(0, r.current - r.topup);
-      const newUsed = r.used + 1;
-      const {error} = await sb.from('app_reserves').update({current:newCurrent, used:newUsed}).eq('id', r.id);
+  document.querySelectorAll('.res-current-input').forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const r = reserves.find(x=>x.id===inp.dataset.res);
+      const newCurrent = Math.max(0, parseFloat(inp.value)||0);
+      const {error} = await sb.from('app_reserves').update({current:newCurrent}).eq('id', r.id);
       if(error){ showError('update reserve: '+error.message); return; }
-      r.current = newCurrent; r.used = newUsed;
+      r.current = newCurrent;
       renderPortfolioTab(); renderOverview();
     });
   });
