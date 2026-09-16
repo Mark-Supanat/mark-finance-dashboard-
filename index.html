@@ -67,6 +67,9 @@
   .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;}
   .card h3{font-size:14.5px;font-weight:700;margin:0 0 14px;display:flex;justify-content:space-between;align-items:center;}
   .card h3 .sub{font-size:11.5px;color:var(--muted);font-weight:500;}
+  details.card summary.card-summary{font-size:14.5px;font-weight:700;cursor:pointer;list-style:revert;color:var(--text);}
+  details.card summary.card-summary::-webkit-details-marker{color:var(--muted);}
+  details.card[open] summary.card-summary{margin-bottom:2px;}
 
   .bars{display:flex;align-items:flex-end;gap:8px;height:130px;}
   .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;}
@@ -252,7 +255,7 @@
             <button type="button" class="type-btn" data-type="โอน">โอนเงิน</button>
           </div>
           <div class="form-row">
-            <div><label class="field-label">วันที่</label><input type="date" id="fDate" required></div>
+            <div><label class="field-label">วันที่</label><input type="date" id="fDate" lang="en-GB" required></div>
             <div><label class="field-label">จำนวนเงิน</label><input type="number" id="fAmount" step="0.01" min="0" placeholder="0" required></div>
           </div>
           <div class="form-row" id="normalFields">
@@ -282,29 +285,34 @@
       <div class="tabs" id="tabs"></div>
       <div class="month-panel" id="monthPanel"></div>
 
-      <div class="card">
-        <h3>สรุปรายเดือน <span class="sub">2026</span></h3>
-        <div id="monthlySummaryTable"></div>
-      </div>
+      <details class="card">
+        <summary class="card-summary">สรุปรายเดือน <span class="sub">2026</span></summary>
+        <div id="monthlySummaryTable" style="margin-top:14px;"></div>
+      </details>
       <div class="grid2">
-        <div class="card">
-          <h3>สรุปรายจ่ายตามหมวดหมู่ <span class="sub">ทั้งปี</span></h3>
-          <div id="actionCatBars"></div>
-        </div>
-        <div class="card">
-          <h3>รายจ่ายคงที่ <span class="sub">Fixed Cost — อ้างอิง</span></h3>
-          <div id="fixedCostList"></div>
-        </div>
+        <details class="card">
+          <summary class="card-summary">สรุปรายจ่ายตามหมวดหมู่ <span class="sub">ทั้งปี</span></summary>
+          <div id="actionCatBars" style="margin-top:14px;"></div>
+        </details>
+        <details class="card">
+          <summary class="card-summary">รายจ่ายคงที่ <span class="sub">Fixed Cost</span></summary>
+          <div id="fixedCostList" style="margin-top:14px;"></div>
+          <form id="fixedCostForm" style="margin-top:10px;display:flex;gap:8px;">
+            <input type="text" id="fcName" placeholder="ชื่อรายการ" style="flex:1.4;">
+            <input type="number" id="fcAmount" placeholder="บาท/เดือน" style="flex:1;">
+            <button type="submit" class="submit" style="flex:0 0 auto;padding:9px 16px;">+ เพิ่ม</button>
+          </form>
+        </details>
       </div>
 
-      <div class="card">
-        <h3>เงินโอนเข้า-ออกพอร์ตเทรด <span class="sub">Forex / TFEX / S50 / MGO</span></h3>
-        <div id="portfolioFullLog"></div>
-      </div>
-      <div class="card">
-        <h3>สรุปตามบัญชี <span class="sub">พอร์ตเทรด</span></h3>
-        <div id="portfolioAccSummary"></div>
-      </div>
+      <details class="card">
+        <summary class="card-summary">เงินโอนเข้า-ออกพอร์ตเทรด <span class="sub">Forex / TFEX / S50 / MGO</span></summary>
+        <div id="portfolioFullLog" style="margin-top:14px;"></div>
+      </details>
+      <details class="card">
+        <summary class="card-summary">สรุปตามบัญชี <span class="sub">พอร์ตเทรด</span></summary>
+        <div id="portfolioAccSummary" style="margin-top:14px;"></div>
+      </details>
     </div>
 
     <!-- PORTFOLIO -->
@@ -383,14 +391,15 @@ async function fetchAll(table, orderCol){
 }
 
 async function loadAllData(){
-  const [accRows, allocRows, txRows, trfRows, pfRows, resRows, curRows] = await Promise.all([
+  const [accRows, allocRows, txRows, trfRows, pfRows, resRows, curRows, fcRows] = await Promise.all([
     fetchAll('app_accounts'),
     fetchAll('app_portfolio_allocations','sort_order'),
     fetchAll('app_transactions','date'),
     fetchAll('app_transfers','date'),
     fetchAll('app_portfolio_transfers','date'),
     fetchAll('app_reserves'),
-    fetchAll('app_portfolio_current')
+    fetchAll('app_portfolio_current'),
+    fetchAll('app_fixed_costs')
   ]);
 
   if(accRows.length===0){
@@ -451,6 +460,17 @@ async function loadAllData(){
   txns = txRows.map(r=>({id:r.id, date:r.date, type:r.type, amount:Number(r.amount), category:r.category, note:r.note}));
   transfers = trfRows.map(r=>({id:r.id, date:r.date, from:r.from_account, to:r.to_account, amount:Number(r.amount)}));
   ptxns = pfRows.map(r=>({id:r.id, date:r.date, account:r.account, income:Number(r.income), expense:Number(r.expense), note:r.note}));
+
+  if(fcRows.length===0){
+    for(const f of SEED_FIXED_COSTS){
+      const row = {id:uid(), name:f.name, amount:f.amount};
+      const {error} = await sb.from('app_fixed_costs').insert(row);
+      if(error) showError('seed fixed cost: '+error.message);
+      fixedCosts.push(row);
+    }
+  }else{
+    fixedCosts = fcRows.map(r=>({id:r.id, name:r.name, amount:Number(r.amount)}));
+  }
 }
 
 async function init(){
@@ -656,7 +676,8 @@ function renderActionTab(){
   renderPortfolioAccSummary();
 }
 
-const FIXED_COSTS = [ {name:'ค่าเน็ต AIS (340 x 12)', amount:4080} ];
+const SEED_FIXED_COSTS = [ {name:'ค่าเน็ต AIS (340 x 12)', amount:4080} ];
+let fixedCosts = [];
 
 function renderMonthlySummaryTable(){
   const year = 2026;
@@ -693,10 +714,35 @@ function renderActionCatBars(){
 
 function renderFixedCostList(){
   document.getElementById('fixedCostList').innerHTML =
-    '<table class="tx"><thead><tr><th>รายการ</th><th style="text-align:right">จำนวน/เดือน</th></tr></thead><tbody>' +
-    FIXED_COSTS.map(f=>'<tr><td>'+f.name+'</td><td style="text-align:right">฿'+fmtAmt(f.amount)+'</td></tr>').join('') +
+    '<table class="tx"><thead><tr><th>รายการ</th><th style="text-align:right">จำนวน/เดือน</th><th></th></tr></thead><tbody>' +
+    fixedCosts.map(f=>'<tr><td>'+f.name+'</td><td style="text-align:right">฿'+fmtAmt(f.amount)+'</td>' +
+      '<td style="text-align:right"><button class="del-btn" data-fc="'+f.id+'">×</button></td></tr>').join('') +
+    (fixedCosts.length===0 ? '<tr><td colspan="3" style="text-align:center;color:var(--muted);">ยังไม่มีรายการ</td></tr>' : '') +
     '</tbody></table>';
+  document.querySelectorAll('.del-btn[data-fc]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const {error} = await sb.from('app_fixed_costs').delete().eq('id', btn.dataset.fc);
+      if(error){ showError('delete fixed cost: '+error.message); return; }
+      fixedCosts = fixedCosts.filter(f=>f.id!==btn.dataset.fc);
+      renderFixedCostList();
+    });
+  });
 }
+
+document.getElementById('fixedCostForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const nameInput = document.getElementById('fcName');
+  const amountInput = document.getElementById('fcAmount');
+  const name = nameInput.value.trim();
+  const amount = parseFloat(amountInput.value);
+  if(!name || !amount || amount<=0) return;
+  const row = {id:uid(), name, amount};
+  const {error} = await sb.from('app_fixed_costs').insert(row);
+  if(error){ showError('insert fixed cost: '+error.message); return; }
+  fixedCosts.push(row);
+  nameInput.value=''; amountInput.value='';
+  renderFixedCostList();
+});
 
 function renderPortfolioFullLog(){
   const sorted = ptxns.slice().sort((a,b)=>a.date.localeCompare(b.date));
