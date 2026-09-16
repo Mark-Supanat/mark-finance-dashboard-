@@ -71,6 +71,20 @@
   details.card summary.card-summary::-webkit-details-marker{color:var(--muted);}
   details.card[open] summary.card-summary{margin-bottom:2px;}
 
+  .date-cal-popup{position:absolute;top:calc(100% + 4px);left:0;z-index:40;background:var(--card);border:1px solid var(--border);
+    border-radius:10px;box-shadow:0 8px 24px rgba(20,20,15,.12);padding:12px;width:260px;}
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .cal-head button{background:none;border:none;font-size:15px;cursor:pointer;color:var(--muted);padding:2px 8px;}
+  .cal-head button:hover{color:var(--text);}
+  .cal-title{font-size:13px;font-weight:700;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+  .cal-dow{font-size:10px;color:var(--muted);text-align:center;padding:3px 0;}
+  .cal-day{font-size:12.5px;text-align:center;padding:6px 0;border-radius:6px;cursor:pointer;background:none;border:none;color:var(--text);}
+  .cal-day:hover{background:var(--bg);}
+  .cal-day.today{border:1px solid var(--blue);}
+  .cal-day.selected{background:var(--blue);color:#fff;}
+  .cal-day.other-month{color:var(--border);}
+
   .bars{display:flex;align-items:flex-end;gap:8px;height:130px;}
   .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;}
   .bar-fill{width:60%;background:var(--income);border-radius:5px 5px 0 0;min-height:2px;}
@@ -259,7 +273,8 @@
               <label class="field-label">วันที่</label>
               <div style="position:relative;">
                 <input type="text" id="fDateDisplay" readonly style="cursor:pointer;">
-                <input type="date" id="fDate" style="position:absolute;inset:0;opacity:0;cursor:pointer;" required>
+                <input type="hidden" id="fDate" required>
+                <div id="dateCalPopup" class="date-cal-popup" style="display:none;"></div>
               </div>
             </div>
             <div><label class="field-label">จำนวนเงิน</label><input type="number" id="fAmount" step="0.01" min="0" placeholder="0" required></div>
@@ -490,19 +505,73 @@ function formatDMY(iso){
   const [y,m,d] = iso.split('-');
   return d+'/'+m+'/'+y;
 }
-function syncDateDisplay(){
-  document.getElementById('fDateDisplay').value = formatDMY(document.getElementById('fDate').value);
+function toISO(y,m,d){ return y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0'); }
+function setFDate(iso){
+  document.getElementById('fDate').value = iso;
+  document.getElementById('fDateDisplay').value = formatDMY(iso);
 }
-document.getElementById('fDate').addEventListener('input', syncDateDisplay);
-document.getElementById('fDateDisplay').addEventListener('click', ()=>{
-  const d = document.getElementById('fDate');
-  if(d.showPicker) d.showPicker(); else d.focus();
+
+let calViewY, calViewM;
+const CAL_DOW = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+
+function renderCalendar(){
+  const pop = document.getElementById('dateCalPopup');
+  const selectedIso = document.getElementById('fDate').value;
+  const todayIso = todayISO();
+  const firstDow = new Date(calViewY, calViewM-1, 1).getDay();
+  const daysInMonth = new Date(calViewY, calViewM, 0).getDate();
+  const daysInPrevMonth = new Date(calViewY, calViewM-1, 0).getDate();
+  let html = '<div class="cal-head"><button type="button" id="calPrev">‹</button>' +
+    '<span class="cal-title">'+THAI_MONTHS[calViewM-1]+' '+calViewY+'</span>' +
+    '<button type="button" id="calNext">›</button></div>';
+  html += '<div class="cal-grid">' + CAL_DOW.map(d=>'<div class="cal-dow">'+d+'</div>').join('');
+  for(let i=0;i<firstDow;i++){
+    const dnum = daysInPrevMonth - firstDow + 1 + i;
+    html += '<button type="button" class="cal-day other-month" disabled>'+dnum+'</button>';
+  }
+  for(let d=1; d<=daysInMonth; d++){
+    const iso = toISO(calViewY, calViewM, d);
+    let cls = 'cal-day';
+    if(iso===todayIso) cls += ' today';
+    if(iso===selectedIso) cls += ' selected';
+    html += '<button type="button" class="'+cls+'" data-iso="'+iso+'">'+d+'</button>';
+  }
+  html += '</div>';
+  pop.innerHTML = html;
+
+  document.getElementById('calPrev').onclick = (e)=>{ e.stopPropagation(); calViewM--; if(calViewM<1){calViewM=12; calViewY--;} renderCalendar(); };
+  document.getElementById('calNext').onclick = (e)=>{ e.stopPropagation(); calViewM++; if(calViewM>12){calViewM=1; calViewY++;} renderCalendar(); };
+  pop.querySelectorAll('.cal-day[data-iso]').forEach(btn=>{
+    btn.onclick = (e)=>{
+      e.stopPropagation();
+      setFDate(btn.dataset.iso);
+      pop.style.display = 'none';
+    };
+  });
+}
+
+document.getElementById('fDateDisplay').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  const pop = document.getElementById('dateCalPopup');
+  const opening = pop.style.display==='none';
+  if(opening){
+    const cur = document.getElementById('fDate').value || todayISO();
+    const [y,m] = cur.split('-').map(Number);
+    calViewY = y; calViewM = m;
+    renderCalendar();
+    pop.style.display = 'block';
+  }else{
+    pop.style.display = 'none';
+  }
+});
+document.addEventListener('click', (e)=>{
+  const pop = document.getElementById('dateCalPopup');
+  if(pop && !pop.contains(e.target) && e.target.id!=='fDateDisplay'){ pop.style.display = 'none'; }
 });
 
 async function init(){
   document.getElementById('todayChip').textContent = todayISO();
-  document.getElementById('fDate').value = todayISO();
-  syncDateDisplay();
+  setFDate(todayISO());
 
   await loadAllData();
 
