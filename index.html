@@ -363,6 +363,7 @@ const SEED_RES = [
 const SEED_TRF = [];
 
 let txns=[], ptxns=[], alloc=[], accounts=[], reserves=[], transfers=[];
+let currentPortfolio = {thai_stock:0, mega_stock:0, forex:0, crypto:0, cash:0, total:0};
 let activeMonth = null;
 let selectedType = 'จ่าย';
 
@@ -382,13 +383,14 @@ async function fetchAll(table, orderCol){
 }
 
 async function loadAllData(){
-  const [accRows, allocRows, txRows, trfRows, pfRows, resRows] = await Promise.all([
+  const [accRows, allocRows, txRows, trfRows, pfRows, resRows, curRows] = await Promise.all([
     fetchAll('app_accounts'),
     fetchAll('app_portfolio_allocations','sort_order'),
     fetchAll('app_transactions','date'),
     fetchAll('app_transfers','date'),
     fetchAll('app_portfolio_transfers','date'),
-    fetchAll('app_reserves')
+    fetchAll('app_reserves'),
+    fetchAll('app_portfolio_current')
   ]);
 
   if(accRows.length===0){
@@ -435,6 +437,17 @@ async function loadAllData(){
     alloc = SEED_AL.map((a,i)=>Object.assign({id:'alloc-'+a.month}, a));
   }
 
+  if(curRows.length===0){
+    const last = alloc[alloc.length-1] || {thai_stock:0,mega_stock:0,forex:0,crypto:0,cash:0,total:0};
+    const seedCur = {thai_stock:last.thai_stock, mega_stock:last.mega_stock, forex:last.forex, crypto:last.crypto, cash:last.cash, total:last.total};
+    const {error} = await sb.from('app_portfolio_current').insert(Object.assign({id:'current'}, seedCur));
+    if(error) showError('seed current portfolio: '+error.message);
+    currentPortfolio = seedCur;
+  }else{
+    const r = curRows[0];
+    currentPortfolio = {thai_stock:Number(r.thai_stock), mega_stock:Number(r.mega_stock), forex:Number(r.forex), crypto:Number(r.crypto), cash:Number(r.cash), total:Number(r.total)};
+  }
+
   txns = txRows.map(r=>({id:r.id, date:r.date, type:r.type, amount:Number(r.amount), category:r.category, note:r.note}));
   transfers = trfRows.map(r=>({id:r.id, date:r.date, from:r.from_account, to:r.to_account, amount:Number(r.amount)}));
   ptxns = pfRows.map(r=>({id:r.id, date:r.date, account:r.account, income:Number(r.income), expense:Number(r.expense), note:r.note}));
@@ -470,7 +483,7 @@ document.getElementById('menuToggle').addEventListener('click', ()=>{
 
 /* ---------- OVERVIEW ---------- */
 function accountsTotal(){ return accounts.reduce((s,a)=>s+Number(a.balance||0),0); }
-function portfolioTotal(){ const l=alloc[alloc.length-1]; return l?l.total:0; }
+function portfolioTotal(){ return currentPortfolio.total; }
 
 function renderOverview(){
   const cur = todayISO().slice(0,7);
@@ -479,13 +492,8 @@ function renderOverview(){
   const expense = monthTx.filter(t=>t.type==='จ่าย').reduce((s,t)=>s+Number(t.amount),0);
   const netWorth = accountsTotal() + portfolioTotal();
 
-  const prevAlloc = alloc[alloc.length-2];
-  const curAlloc = alloc[alloc.length-1];
-  let nwChg = 0;
-  if(prevAlloc && curAlloc && prevAlloc.total){ nwChg = ((curAlloc.total-prevAlloc.total)/prevAlloc.total)*100; }
-
   const stats = [
-    {k:'Total Net Worth', v:netWorth, icon:'◆', color:'blue', chg:nwChg, chgLabel:'พอร์ต mtd'},
+    {k:'Total Net Worth', v:netWorth, icon:'◆', color:'blue', chg:null},
     {k:'เงินสดในบัญชี', v:accountsTotal(), icon:'🏦', color:'purple', chg:null},
     {k:'รายรับเดือนนี้', v:income, icon:'↓', color:'teal', chg:null, forceUp:true},
     {k:'รายจ่ายเดือนนี้', v:expense, icon:'↑', color:'rose', chg:null, forceDown:true},
@@ -547,19 +555,17 @@ function renderAccountsList(){
 }
 
 function renderOverviewPortfolioList(){
-  const latest = alloc[alloc.length-1];
   const wrap = document.getElementById('overviewPortfolioList');
-  if(!latest){ wrap.innerHTML = '<div class="empty-note">ยังไม่มีข้อมูลพอร์ต</div>'; return; }
   wrap.innerHTML = ASSET_DEFS.map(d=>{
     return '<div class="acc-card"><div class="acc-top"><div class="acc-icon" style="background:var(--'+d.color+')">'+d.name.slice(0,2).toUpperCase()+'</div>' +
       '<div><div class="acc-name">'+d.name+'</div><div class="acc-purpose">ยอดปัจจุบันในพอร์ต</div></div></div>' +
-      '<div class="acc-bal">฿<input type="number" step="1" value="'+(latest[d.key]||0)+'" data-asset="'+d.key+'" class="ov-asset-input"></div></div>';
+      '<div class="acc-bal">฿<input type="number" step="1" value="'+(currentPortfolio[d.key]||0)+'" data-asset="'+d.key+'" class="ov-asset-input"></div></div>';
   }).join('');
   wrap.querySelectorAll('.ov-asset-input').forEach(inp=>{
     inp.addEventListener('change', async ()=>{
-      latest[inp.dataset.asset] = parseFloat(inp.value)||0;
-      recomputeTotal(latest);
-      const {error} = await sb.from('app_portfolio_allocations').update({[inp.dataset.asset]: latest[inp.dataset.asset], total: latest.total}).eq('id', latest.id);
+      currentPortfolio[inp.dataset.asset] = parseFloat(inp.value)||0;
+      currentPortfolio.total = ASSET_DEFS.reduce((s,d)=>s+Number(currentPortfolio[d.key]||0),0);
+      const {error} = await sb.from('app_portfolio_current').update({[inp.dataset.asset]: currentPortfolio[inp.dataset.asset], total: currentPortfolio.total}).eq('id','current');
       if(error) showError('update portfolio: '+error.message);
       renderOverview();
     });
