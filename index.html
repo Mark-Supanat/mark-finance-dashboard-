@@ -255,7 +255,13 @@
             <button type="button" class="type-btn" data-type="โอน">โอนเงิน</button>
           </div>
           <div class="form-row">
-            <div><label class="field-label">วันที่</label><input type="date" id="fDate" lang="en-GB" required></div>
+            <div>
+              <label class="field-label">วันที่</label>
+              <div style="position:relative;">
+                <input type="text" id="fDateDisplay" readonly style="cursor:pointer;">
+                <input type="date" id="fDate" style="position:absolute;inset:0;opacity:0;cursor:pointer;" required>
+              </div>
+            </div>
             <div><label class="field-label">จำนวนเงิน</label><input type="number" id="fAmount" step="0.01" min="0" placeholder="0" required></div>
           </div>
           <div class="form-row" id="normalFields">
@@ -282,37 +288,43 @@
           <button type="submit" class="submit" id="submitBtn">บันทึกรายการ</button>
         </form>
       </div>
-      <div class="tabs" id="tabs"></div>
-      <div class="month-panel" id="monthPanel"></div>
 
       <details class="card">
-        <summary class="card-summary">สรุปรายเดือน <span class="sub">2026</span></summary>
-        <div id="monthlySummaryTable" style="margin-top:14px;"></div>
+        <summary class="card-summary">รายการประจำเดือน <span class="sub">แตะเพื่อดูรายการรายวัน</span></summary>
+        <div style="margin-top:14px;">
+          <div class="tabs" id="tabs"></div>
+          <div class="month-panel" id="monthPanel"></div>
+        </div>
       </details>
+
+      <div class="card">
+        <h3>สรุปรายเดือน <span class="sub">2026</span></h3>
+        <div id="monthlySummaryTable"></div>
+      </div>
       <div class="grid2">
-        <details class="card">
-          <summary class="card-summary">สรุปรายจ่ายตามหมวดหมู่ <span class="sub">ทั้งปี</span></summary>
-          <div id="actionCatBars" style="margin-top:14px;"></div>
-        </details>
-        <details class="card">
-          <summary class="card-summary">รายจ่ายคงที่ <span class="sub">Fixed Cost</span></summary>
-          <div id="fixedCostList" style="margin-top:14px;"></div>
+        <div class="card">
+          <h3>สรุปรายจ่ายตามหมวดหมู่ <span class="sub">ทั้งปี</span></h3>
+          <div id="actionCatBars"></div>
+        </div>
+        <div class="card">
+          <h3>รายจ่ายคงที่ <span class="sub">Fixed Cost</span></h3>
+          <div id="fixedCostList"></div>
           <form id="fixedCostForm" style="margin-top:10px;display:flex;gap:8px;">
             <input type="text" id="fcName" placeholder="ชื่อรายการ" style="flex:1.4;">
             <input type="number" id="fcAmount" placeholder="บาท/เดือน" style="flex:1;">
             <button type="submit" class="submit" style="flex:0 0 auto;padding:9px 16px;">+ เพิ่ม</button>
           </form>
-        </details>
+        </div>
       </div>
 
-      <details class="card">
-        <summary class="card-summary">เงินโอนเข้า-ออกพอร์ตเทรด <span class="sub">Forex / TFEX / S50 / MGO</span></summary>
-        <div id="portfolioFullLog" style="margin-top:14px;"></div>
-      </details>
-      <details class="card">
-        <summary class="card-summary">สรุปตามบัญชี <span class="sub">พอร์ตเทรด</span></summary>
-        <div id="portfolioAccSummary" style="margin-top:14px;"></div>
-      </details>
+      <div class="card">
+        <h3>เงินโอนเข้า-ออกพอร์ตเทรด <span class="sub">Forex / TFEX / S50 / MGO</span></h3>
+        <div id="portfolioFullLog"></div>
+      </div>
+      <div class="card">
+        <h3>สรุปตามบัญชี <span class="sub">พอร์ตเทรด</span></h3>
+        <div id="portfolioAccSummary"></div>
+      </div>
     </div>
 
     <!-- PORTFOLIO -->
@@ -473,9 +485,24 @@ async function loadAllData(){
   }
 }
 
+function formatDMY(iso){
+  if(!iso) return '';
+  const [y,m,d] = iso.split('-');
+  return d+'/'+m+'/'+y;
+}
+function syncDateDisplay(){
+  document.getElementById('fDateDisplay').value = formatDMY(document.getElementById('fDate').value);
+}
+document.getElementById('fDate').addEventListener('input', syncDateDisplay);
+document.getElementById('fDateDisplay').addEventListener('click', ()=>{
+  const d = document.getElementById('fDate');
+  if(d.showPicker) d.showPicker(); else d.focus();
+});
+
 async function init(){
   document.getElementById('todayChip').textContent = todayISO();
   document.getElementById('fDate').value = todayISO();
+  syncDateDisplay();
 
   await loadAllData();
 
