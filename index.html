@@ -476,7 +476,7 @@ async function loadAllData(){
 
   if(resRows.length===0){
     for(const r of SEED_RES){
-      const {error} = await sb.from('app_reserves').insert(r);
+      const {error} = await sb.from('app_reserves').insert({id:r.id, name:r.name, initial:r.initial, current:r.current, topup:r.topup, max_topups:r.maxTopups, used:r.used});
       if(error) showError('seed reserve: '+error.message);
     }
     reserves = JSON.parse(JSON.stringify(SEED_RES));
@@ -501,13 +501,15 @@ async function loadAllData(){
 
   if(curRows.length===0){
     const last = alloc[alloc.length-1] || {thai_stock:0,mega_stock:0,forex:0,crypto:0,cash:0,total:0};
-    const seedCur = {thai_stock:last.thai_stock, mega_stock:last.mega_stock, forex:last.forex, crypto:last.crypto, cash:last.cash, total:last.total};
+    const seedCur = {thai_stock:last.thai_stock, mega_stock:last.mega_stock, forex:last.forex, crypto:last.crypto, cash:last.cash};
+    seedCur.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(seedCur[k]||0),0);
     const {error} = await sb.from('app_portfolio_current').insert(Object.assign({id:'current'}, seedCur));
     if(error) showError('seed current portfolio: '+error.message);
     currentPortfolio = seedCur;
   }else{
     const r = curRows[0];
-    currentPortfolio = {thai_stock:Number(r.thai_stock), mega_stock:Number(r.mega_stock), forex:Number(r.forex), crypto:Number(r.crypto), cash:Number(r.cash), total:Number(r.total)};
+    currentPortfolio = {thai_stock:Number(r.thai_stock), mega_stock:Number(r.mega_stock), forex:Number(r.forex), crypto:Number(r.crypto), cash:Number(r.cash), total:0};
+    currentPortfolio.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(currentPortfolio[k]||0),0);
   }
 
   txns = txRows.map(r=>({id:r.id, date:r.date, type:r.type, amount:Number(r.amount), category:r.category, note:r.note}));
@@ -698,15 +700,18 @@ function renderAccountsList(){
 
 function renderOverviewPortfolioList(){
   const wrap = document.getElementById('overviewPortfolioList');
-  wrap.innerHTML = ASSET_DEFS.map(d=>{
+  wrap.innerHTML = OVERVIEW_ASSET_DEFS.map(d=>{
     return '<div class="acc-card"><div class="acc-top"><div class="acc-icon" style="background:var(--'+d.color+')">'+d.name.slice(0,2).toUpperCase()+'</div>' +
       '<div><div class="acc-name">'+d.name+'</div><div class="acc-purpose">ยอดปัจจุบันในพอร์ต</div></div></div>' +
       '<div class="acc-bal">฿<input type="number" step="1" value="'+(currentPortfolio[d.key]||0)+'" data-asset="'+d.key+'" class="ov-asset-input"></div></div>';
-  }).join('');
+  }).join('') +
+    '<div class="acc-card" style="opacity:.7;"><div class="acc-top"><div class="acc-icon" style="background:var(--slate)">เง</div>' +
+    '<div><div class="acc-name">เงินสด</div><div class="acc-purpose">รวมจาก My Accounts ด้านบนแล้ว</div></div></div>' +
+    '<div class="acc-bal">฿'+fmtAmt(accountsTotal())+'</div></div>';
   wrap.querySelectorAll('.ov-asset-input').forEach(inp=>{
     inp.addEventListener('change', async ()=>{
       currentPortfolio[inp.dataset.asset] = parseFloat(inp.value)||0;
-      currentPortfolio.total = ASSET_DEFS.reduce((s,d)=>s+Number(currentPortfolio[d.key]||0),0);
+      currentPortfolio.total = OVERVIEW_ASSET_DEFS.reduce((s,d)=>s+Number(currentPortfolio[d.key]||0),0);
       const {error} = await sb.from('app_portfolio_current').update({[inp.dataset.asset]: currentPortfolio[inp.dataset.asset], total: currentPortfolio.total}).eq('id','current');
       if(error) showError('update portfolio: '+error.message);
       renderOverview();
@@ -719,10 +724,10 @@ const ASSET_COLOR_HEX = {thai_stock:'#2E90FA', mega_stock:'#7A5AF8', forex:'#15B
 let portfolioDonutChart = null;
 function renderPortfolioDonut(){
   const canvas = document.getElementById('portfolioDonut');
-  const values = ASSET_DEFS.map(d=>Number(currentPortfolio[d.key])||0);
+  const values = OVERVIEW_ASSET_DEFS.map(d=>Number(currentPortfolio[d.key])||0);
   const total = values.reduce((s,v)=>s+v,0);
   document.getElementById('portfolioDonutTotal').textContent = '฿'+fmtAmt(total);
-  document.getElementById('portfolioDonutLegend').innerHTML = ASSET_DEFS.map((d,i)=>{
+  document.getElementById('portfolioDonutLegend').innerHTML = OVERVIEW_ASSET_DEFS.map((d,i)=>{
     const pct = total ? Math.round((values[i]/total)*100) : 0;
     return '<span style="display:flex;align-items:center;gap:7px;">' +
       '<span style="width:9px;height:9px;border-radius:2px;background:'+ASSET_COLOR_HEX[d.key]+';flex-shrink:0;"></span>' +
@@ -734,8 +739,8 @@ function renderPortfolioDonut(){
   portfolioDonutChart = new Chart(canvas, {
     type: 'doughnut',
     data: {
-      labels: ASSET_DEFS.map(d=>d.name),
-      datasets: [{ data: values.some(v=>v>0)?values:[1,0,0,0], backgroundColor: ASSET_DEFS.map(d=>ASSET_COLOR_HEX[d.key]), borderWidth: 0 }]
+      labels: OVERVIEW_ASSET_DEFS.map(d=>d.name),
+      datasets: [{ data: values.some(v=>v>0)?values:[1,0,0,0], backgroundColor: OVERVIEW_ASSET_DEFS.map(d=>ASSET_COLOR_HEX[d.key]), borderWidth: 0 }]
     },
     options: {
       responsive:true, maintainAspectRatio:false, cutout:'70%',
@@ -1009,6 +1014,8 @@ const ASSET_DEFS = [
   {key:'crypto', name:'คริปโต', color:'amber'},
   {key:'cash', name:'เงินสด', color:'slate'}
 ];
+// ใช้เฉพาะสินทรัพย์ที่ลงทุนจริง (ไม่รวมเงินสด เพราะเงินสด = ยอดรวม My Accounts อยู่แล้ว ป้องกันนับซ้ำใน Net Worth)
+const OVERVIEW_ASSET_DEFS = ASSET_DEFS.filter(d=>d.key!=='cash');
 function periodLabel(a){ return a.label || monthLabel(a.month); }
 function periodShortLabel(a){
   if(a.shortLabel) return a.shortLabel;
