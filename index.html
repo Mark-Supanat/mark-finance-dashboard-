@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Finance OS — Mark</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <style>
   :root{
     --bg:#F5F6FA;
@@ -136,7 +137,7 @@
   button.submit:disabled{opacity:.5;}
   button.small-btn{padding:6px 10px;border-radius:7px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:11.5px;cursor:pointer;}
 
-  .tabs{display:flex;gap:4px;overflow-x:auto;}
+  .tabs{display:flex;flex-direction:column;gap:6px;}
   .tab{flex:0 0 auto;padding:8px 13px;font-size:12px;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-bottom:none;border-radius:8px 8px 0 0;cursor:pointer;white-space:nowrap;position:relative;top:1px;}
   .tab.closed{border-bottom:3px double var(--expense);}
   .tab.active{background:var(--card);color:var(--text);}
@@ -254,6 +255,16 @@
 
       <div class="card">
         <h3>Portfolio <span class="sub">แตะเพื่อแก้ไขยอดปัจจุบัน</span></h3>
+        <div style="display:flex;gap:22px;align-items:center;margin-bottom:20px;flex-wrap:wrap;">
+          <div style="position:relative;width:130px;height:130px;flex-shrink:0;">
+            <canvas id="portfolioDonut"></canvas>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;">
+              <span style="font-size:10px;color:var(--muted);">รวม</span>
+              <span id="portfolioDonutTotal" style="font-size:14px;font-weight:700;"></span>
+            </div>
+          </div>
+          <div id="portfolioDonutLegend" style="flex:1;min-width:150px;display:flex;flex-direction:column;gap:7px;font-size:12.5px;"></div>
+        </div>
         <div class="acc-list" id="overviewPortfolioList"></div>
       </div>
     </div>
@@ -353,8 +364,8 @@
         </div>
       </div>
       <div class="card">
-        <h3>แนวโน้มพอร์ตรวม <span class="sub">2024 – ปัจจุบัน</span></h3>
-        <div class="bars" id="allocBars"></div>
+        <h3>แนวโน้มพอร์ตรวม (Equity Curve) <span class="sub">2024 – ปัจจุบัน</span></h3>
+        <div style="position:relative;height:220px;"><canvas id="allocEquityChart"></canvas></div>
       </div>
       <div class="card">
         <h3>Reserve Management</h3>
@@ -408,7 +419,22 @@ function monthLabel(k){ const [y,m]=k.split('-').map(Number); return THAI_MONTHS
 function fmtAmt(n){ return new Intl.NumberFormat('en-US',{maximumFractionDigits:2}).format(n); }
 function uid(){ return Math.random().toString(36).slice(2,10); }
 
-function showError(msg){ console.error(msg); }
+let errorToastTimer = null;
+function showError(msg){
+  console.error(msg);
+  let toast = document.getElementById('errorToast');
+  if(!toast){
+    toast = document.createElement('div');
+    toast.id = 'errorToast';
+    toast.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);background:var(--expense);color:#fff;' +
+      'padding:10px 18px;border-radius:8px;font-size:12.5px;z-index:200;max-width:90vw;box-shadow:0 6px 18px rgba(0,0,0,.15);';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = 'เกิดข้อผิดพลาด: ' + msg;
+  toast.style.display = 'block';
+  clearTimeout(errorToastTimer);
+  errorToastTimer = setTimeout(()=>{ toast.style.display = 'none'; }, 6000);
+}
 
 async function fetchAll(table, orderCol){
   const q = sb.from(table).select('*');
@@ -686,6 +712,36 @@ function renderOverviewPortfolioList(){
       renderOverview();
     });
   });
+  renderPortfolioDonut();
+}
+
+const ASSET_COLOR_HEX = {thai_stock:'#2E90FA', mega_stock:'#7A5AF8', forex:'#15B79E', crypto:'#F79009'};
+let portfolioDonutChart = null;
+function renderPortfolioDonut(){
+  const canvas = document.getElementById('portfolioDonut');
+  const values = ASSET_DEFS.map(d=>Number(currentPortfolio[d.key])||0);
+  const total = values.reduce((s,v)=>s+v,0);
+  document.getElementById('portfolioDonutTotal').textContent = '฿'+fmtAmt(total);
+  document.getElementById('portfolioDonutLegend').innerHTML = ASSET_DEFS.map((d,i)=>{
+    const pct = total ? Math.round((values[i]/total)*100) : 0;
+    return '<span style="display:flex;align-items:center;gap:7px;">' +
+      '<span style="width:9px;height:9px;border-radius:2px;background:'+ASSET_COLOR_HEX[d.key]+';flex-shrink:0;"></span>' +
+      '<span style="color:var(--muted);flex:1;">'+d.name+'</span><span style="font-weight:600;">'+pct+'%</span></span>';
+  }).join('');
+
+  if(portfolioDonutChart) portfolioDonutChart.destroy();
+  if(typeof Chart === 'undefined') return;
+  portfolioDonutChart = new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels: ASSET_DEFS.map(d=>d.name),
+      datasets: [{ data: values.some(v=>v>0)?values:[1,0,0,0], backgroundColor: ASSET_DEFS.map(d=>ASSET_COLOR_HEX[d.key]), borderWidth: 0 }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false, cutout:'70%',
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{ label:(ctx)=>ctx.label+': ฿'+fmtAmt(ctx.parsed) }} }
+    }
+  });
 }
 
 function accName(id){ const a=accounts.find(x=>x.id===id); return a?a.name:id; }
@@ -754,9 +810,11 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
 });
 
 function allMonthKeys(){
-  const cur = todayISO().slice(0,7);
-  const keys = Array.from(new Set([...txns.map(t=>monthKey(t.date)), ...transfers.map(t=>monthKey(t.date))]));
-  if(!keys.includes(cur)) keys.push(cur);
+  const year = Number(todayISO().slice(0,4));
+  const keys = [];
+  for(let m=1;m<=12;m++){ keys.push(year+'-'+String(m).padStart(2,'0')); }
+  const dataKeys = new Set([...txns.map(t=>monthKey(t.date)), ...transfers.map(t=>monthKey(t.date))]);
+  dataKeys.forEach(k=>{ if(!keys.includes(k)) keys.push(k); });
   keys.sort();
   return keys;
 }
@@ -776,7 +834,7 @@ const SEED_FIXED_COSTS = [ {name:'ค่าเน็ต AIS (340 x 12)', amount:
 let fixedCosts = [];
 
 function renderMonthlySummaryTable(){
-  const year = 2026;
+  const year = Number(todayISO().slice(0,4));
   let rowsHtml = '';
   let yIn=0, yOut=0;
   for(let m=1;m<=12;m++){
@@ -853,14 +911,17 @@ function renderPortfolioFullLog(){
 }
 
 function renderPortfolioAccSummary(){
-  const accs = ['Forex','TFEX','S50','MGO'];
+  const groups = [
+    {label:'Forex', accs:['Forex']},
+    {label:'TFEX', accs:['TFEX','S50','MGO']}
+  ];
   let totIn=0, totOut=0;
-  const rows = accs.map(a=>{
-    const rows = ptxns.filter(p=>p.account===a);
+  const rows = groups.map(g=>{
+    const rows = ptxns.filter(p=>g.accs.includes(p.account));
     const inc = rows.reduce((s,p)=>s+Number(p.income||0),0);
     const out = rows.reduce((s,p)=>s+Number(p.expense||0),0);
     totIn+=inc; totOut+=out;
-    return '<tr><td>'+a+'</td><td style="text-align:right">฿'+fmtAmt(inc)+'</td><td style="text-align:right">฿'+fmtAmt(out)+'</td></tr>';
+    return '<tr><td>'+g.label+'</td><td style="text-align:right">฿'+fmtAmt(inc)+'</td><td style="text-align:right">฿'+fmtAmt(out)+'</td></tr>';
   }).join('');
   document.getElementById('portfolioAccSummary').innerHTML =
     '<table class="tx"><thead><tr><th>บัญชี</th><th style="text-align:right">รวมถอน/กำไร (รับ)</th><th style="text-align:right">รวมฝาก/เติม (จ่าย)</th></tr></thead><tbody>' +
@@ -871,14 +932,37 @@ function renderTabs(keys){
   const cur = todayISO().slice(0,7);
   const tabsEl = document.getElementById('tabs');
   tabsEl.innerHTML='';
+
+  const quarters = {'Q1':[], 'Q2':[], 'Q3':[], 'Q4':[], 'อื่นๆ':[]};
   keys.forEach(k=>{
-    const btn = document.createElement('div');
-    btn.className='tab'+(k===activeMonth?' active':'')+(k<cur?' closed':'');
-    btn.textContent = monthLabel(k);
-    btn.onclick = ()=>{ activeMonth=k; renderTabs(keys); renderMonthPanel(k); };
-    tabsEl.appendChild(btn);
+    const m = Number(k.split('-')[1]);
+    if(k.split('-')[0]!=='2026'){ quarters['อื่นๆ'].push(k); return; }
+    if(m<=3) quarters['Q1'].push(k);
+    else if(m<=6) quarters['Q2'].push(k);
+    else if(m<=9) quarters['Q3'].push(k);
+    else quarters['Q4'].push(k);
   });
-  tabsEl.scrollLeft = tabsEl.scrollWidth;
+
+  ['อื่นๆ','Q1','Q2','Q3','Q4'].forEach(qname=>{
+    const qkeys = quarters[qname];
+    if(qkeys.length===0) return;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap;';
+    if(qname!=='อื่นๆ'){
+      const qLabel = document.createElement('span');
+      qLabel.textContent = qname;
+      qLabel.style.cssText = 'font-size:10.5px;font-weight:700;color:var(--muted);width:22px;flex-shrink:0;';
+      row.appendChild(qLabel);
+    }
+    qkeys.forEach(k=>{
+      const btn = document.createElement('div');
+      btn.className='tab'+(k===activeMonth?' active':'')+(k<cur?' closed':'');
+      btn.textContent = monthLabel(k);
+      btn.onclick = ()=>{ activeMonth=k; renderTabs(keys); renderMonthPanel(k); };
+      row.appendChild(btn);
+    });
+    tabsEl.appendChild(row);
+  });
 }
 function renderMonthPanel(key){
   const panel = document.getElementById('monthPanel');
@@ -1004,13 +1088,34 @@ document.getElementById('addColBtn').addEventListener('click', async ()=>{
   renderAllocHistoryTable(); renderPortfolioBars(); renderOverview();
 });
 
+let allocEquityChart = null;
 function renderPortfolioBars(){
-  const bars = document.getElementById('allocBars');
-  const max = Math.max(1, ...alloc.map(a=>a.total));
-  bars.innerHTML = alloc.map(a=>{
-    const h = Math.max(3, Math.round((a.total/max)*100));
-    return '<div class="bar-col"><div class="bar-fill" style="height:'+h+'%" title="'+periodLabel(a)+': ฿'+fmtAmt(a.total)+'"></div><div class="bar-label">'+periodShortLabel(a)+'</div></div>';
-  }).join('');
+  const canvas = document.getElementById('allocEquityChart');
+  if(allocEquityChart) allocEquityChart.destroy();
+  if(typeof Chart === 'undefined') return;
+  allocEquityChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: alloc.map(a=>periodShortLabel(a)),
+      datasets: [{
+        label: 'พอร์ตรวม',
+        data: alloc.map(a=>a.total),
+        borderColor: '#2E90FA', backgroundColor: 'rgba(46,144,250,.08)',
+        fill: true, tension: 0.25, pointRadius: 3, pointBackgroundColor: '#2E90FA'
+      }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{
+        title:(items)=>periodLabel(alloc[items[0].dataIndex]),
+        label:(ctx)=>'฿'+fmtAmt(ctx.parsed.y)
+      }}},
+      scales:{
+        y:{ beginAtZero:true, ticks:{ callback:(v)=>'฿'+fmtAmt(v) } },
+        x:{ grid:{display:false} }
+      }
+    }
+  });
 }
 
 function renderPortfolioTab(){
