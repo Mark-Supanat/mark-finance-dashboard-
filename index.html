@@ -720,27 +720,29 @@ function renderOverviewPortfolioList(){
   renderPortfolioDonut();
 }
 
-const ASSET_COLOR_HEX = {thai_stock:'#2E90FA', mega_stock:'#7A5AF8', forex:'#15B79E', crypto:'#F79009'};
+const ASSET_COLOR_HEX = {thai_stock:'#2E90FA', mega_stock:'#7A5AF8', forex:'#15B79E', crypto:'#F79009', cash:'#667085'};
 let portfolioDonutChart = null;
 function renderPortfolioDonut(){
   const canvas = document.getElementById('portfolioDonut');
-  const values = OVERVIEW_ASSET_DEFS.map(d=>Number(currentPortfolio[d.key])||0);
-  const total = values.reduce((s,v)=>s+v,0);
+  const slices = OVERVIEW_ASSET_DEFS.map(d=>({name:d.name, key:d.key, value:Number(currentPortfolio[d.key])||0}));
+  slices.push({name:'เงินสด', key:'cash', value:accountsTotal()});
+  const total = slices.reduce((s,x)=>s+x.value,0);
   document.getElementById('portfolioDonutTotal').textContent = '฿'+fmtAmt(total);
-  document.getElementById('portfolioDonutLegend').innerHTML = OVERVIEW_ASSET_DEFS.map((d,i)=>{
-    const pct = total ? Math.round((values[i]/total)*100) : 0;
+  document.getElementById('portfolioDonutLegend').innerHTML = slices.map(s=>{
+    const pct = total ? Math.round((s.value/total)*100) : 0;
     return '<span style="display:flex;align-items:center;gap:7px;">' +
-      '<span style="width:9px;height:9px;border-radius:2px;background:'+ASSET_COLOR_HEX[d.key]+';flex-shrink:0;"></span>' +
-      '<span style="color:var(--muted);flex:1;">'+d.name+'</span><span style="font-weight:600;">'+pct+'%</span></span>';
+      '<span style="width:9px;height:9px;border-radius:2px;background:'+ASSET_COLOR_HEX[s.key]+';flex-shrink:0;"></span>' +
+      '<span style="color:var(--muted);flex:1;">'+s.name+'</span><span style="font-weight:600;">'+pct+'%</span></span>';
   }).join('');
 
   if(portfolioDonutChart) portfolioDonutChart.destroy();
   if(typeof Chart === 'undefined') return;
+  const values = slices.map(s=>s.value);
   portfolioDonutChart = new Chart(canvas, {
     type: 'doughnut',
     data: {
-      labels: OVERVIEW_ASSET_DEFS.map(d=>d.name),
-      datasets: [{ data: values.some(v=>v>0)?values:[1,0,0,0], backgroundColor: OVERVIEW_ASSET_DEFS.map(d=>ASSET_COLOR_HEX[d.key]), borderWidth: 0 }]
+      labels: slices.map(s=>s.name),
+      datasets: [{ data: values.some(v=>v>0)?values:[1,0,0,0,0], backgroundColor: slices.map(s=>ASSET_COLOR_HEX[s.key]), borderWidth: 0 }]
     },
     options: {
       responsive:true, maintainAspectRatio:false, cutout:'70%',
@@ -749,16 +751,29 @@ function renderPortfolioDonut(){
   });
 }
 
-function accName(id){ const a=accounts.find(x=>x.id===id); return a?a.name:id; }
+function accName(id){
+  const a=accounts.find(x=>x.id===id);
+  if(a) return a.name;
+  if(id==='port-forex') return 'พอร์ต Forex';
+  if(id==='port-tfex') return 'พอร์ต TFEX';
+  return id;
+}
 
 /* ---------- ACTION TAB ---------- */
 function populateAccountSelects(){
-  const opts = accounts.map(a=>'<option value="'+a.id+'">'+a.name+'</option>').join('');
+  const opts = accounts.map(a=>'<option value="'+a.id+'">'+a.name+'</option>').join('') +
+    '<optgroup label="พอร์ตเทรด">' +
+    '<option value="port-forex">พอร์ต Forex</option>' +
+    '<option value="port-tfex">พอร์ต TFEX</option>' +
+    '</optgroup>';
   document.getElementById('fFrom').innerHTML = opts;
   document.getElementById('fTo').innerHTML = opts;
   const resOpts = '<option value="">ไม่เกี่ยวกับ Reserve</option>' + reserves.map(r=>'<option value="'+r.id+'">'+r.name+'</option>').join('');
   document.getElementById('fReserve').innerHTML = resOpts;
 }
+function isPortfolioAcc(id){ return id==='port-forex' || id==='port-tfex'; }
+function portfolioAssetKey(id){ return id==='port-forex' ? 'forex' : 'thai_stock'; }
+function portfolioAccLabel(id){ return id==='port-forex' ? 'Forex' : 'TFEX'; }
 
 document.getElementById('typeToggle').addEventListener('click', (e)=>{
   const btn = e.target.closest('.type-btn');
@@ -787,6 +802,38 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
     const {error} = await sb.from('app_transfers').insert({id:row.id, date:row.date, from_account:from, to_account:to, amount});
     if(error){ showError('insert transfer: '+error.message); submitBtn.disabled=false; return; }
     transfers.push(row);
+
+    // ปรับยอดบัญชีธนาคารจริง (ลดต้นทาง/เพิ่มปลายทาง เฉพาะที่เป็นบัญชีธนาคารจริง)
+    const fromAcc = accounts.find(a=>a.id===from);
+    const toAcc = accounts.find(a=>a.id===to);
+    if(fromAcc){
+      fromAcc.balance = Math.max(0, Number(fromAcc.balance) - amount);
+      await sb.from('app_accounts').update({balance:fromAcc.balance}).eq('id', fromAcc.id);
+    }
+    if(toAcc){
+      toAcc.balance = Number(toAcc.balance) + amount;
+      await sb.from('app_accounts').update({balance:toAcc.balance}).eq('id', toAcc.id);
+    }
+
+    // ถ้าต้นทาง/ปลายทางเป็นพอร์ตเทรด (Forex/TFEX) ปรับยอดพอร์ตปัจจุบัน + บันทึก log เงินโอนพอร์ตเทรด
+    if(isPortfolioAcc(to)){
+      const key = portfolioAssetKey(to);
+      currentPortfolio[key] = Number(currentPortfolio[key]||0) + amount;
+      currentPortfolio.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(currentPortfolio[k]||0),0);
+      await sb.from('app_portfolio_current').update({[key]:currentPortfolio[key], total:currentPortfolio.total}).eq('id','current');
+      const pRow = {id:uid(), date, account:portfolioAccLabel(to), income:0, expense:amount, note:'เติมพอร์ต '+portfolioAccLabel(to)+' (โอนจาก '+accName(from)+')'};
+      const {error:pErr} = await sb.from('app_portfolio_transfers').insert(pRow);
+      if(pErr) showError('log portfolio transfer: '+pErr.message); else ptxns.push(pRow);
+    }
+    if(isPortfolioAcc(from)){
+      const key = portfolioAssetKey(from);
+      currentPortfolio[key] = Math.max(0, Number(currentPortfolio[key]||0) - amount);
+      currentPortfolio.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(currentPortfolio[k]||0),0);
+      await sb.from('app_portfolio_current').update({[key]:currentPortfolio[key], total:currentPortfolio.total}).eq('id','current');
+      const pRow = {id:uid(), date, account:portfolioAccLabel(from), income:amount, expense:0, note:'ถอนจากพอร์ต '+portfolioAccLabel(from)+' (โอนเข้า '+accName(to)+')'};
+      const {error:pErr} = await sb.from('app_portfolio_transfers').insert(pRow);
+      if(pErr) showError('log portfolio transfer: '+pErr.message); else ptxns.push(pRow);
+    }
 
     const resId = document.getElementById('fReserve').value;
     const resDir = document.getElementById('fReserveDir').value;
