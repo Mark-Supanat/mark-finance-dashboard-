@@ -6,6 +6,7 @@
 <title>Finance OS — Mark</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#F5F6FA;
@@ -271,6 +272,13 @@
 
     <!-- ACTION -->
     <div class="view" id="view-action">
+      <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label class="field-label" style="margin:0;">ปีที่ดู</label>
+          <select id="yearSelector" style="width:auto;padding:7px 10px;"></select>
+        </div>
+        <button type="button" class="submit" id="exportExcelBtn" style="width:auto;padding:9px 16px;">⬇ Export เป็น Excel</button>
+      </div>
       <div class="card">
         <h3>เพิ่มรายการ</h3>
         <form id="txForm">
@@ -324,7 +332,7 @@
       </details>
 
       <div class="card">
-        <h3>สรุปรายเดือน <span class="sub">2026</span></h3>
+        <h3>สรุปรายเดือน <span class="sub" id="monthlySummaryYearLabel">2026</span></h3>
         <div id="monthlySummaryTable"></div>
       </div>
       <div class="grid2">
@@ -597,6 +605,8 @@ document.addEventListener('click', (e)=>{
   if(pop && !pop.contains(e.target) && e.target.id!=='fDateDisplay'){ pop.style.display = 'none'; }
 });
 
+let selectedYear = null;
+
 async function init(){
   document.getElementById('todayChip').textContent = todayISO();
   setFDate(todayISO());
@@ -604,12 +614,33 @@ async function init(){
   await loadAllData();
 
   activeMonth = todayISO().slice(0,7);
+  selectedYear = Number(todayISO().slice(0,4));
 
   populateAccountSelects();
+  renderYearSelector();
   renderOverview();
   renderActionTab();
   renderPortfolioTab();
 }
+
+function availableYears(){
+  const cur = Number(todayISO().slice(0,4));
+  const years = new Set([cur]);
+  txns.forEach(t=>years.add(Number(t.date.slice(0,4))));
+  transfers.forEach(t=>years.add(Number(t.date.slice(0,4))));
+  return Array.from(years).sort();
+}
+
+function renderYearSelector(){
+  const sel = document.getElementById('yearSelector');
+  sel.innerHTML = availableYears().map(y=>'<option value="'+y+'"'+(y===selectedYear?' selected':'')+'>'+y+'</option>').join('');
+}
+document.getElementById('yearSelector').addEventListener('change', (e)=>{
+  selectedYear = Number(e.target.value);
+  const cur = todayISO().slice(0,7);
+  activeMonth = (selectedYear===Number(cur.slice(0,4))) ? cur : selectedYear+'-01';
+  renderActionTab();
+});
 
 /* ---------- NAV ---------- */
 document.querySelectorAll('.nav-item').forEach(item=>{
@@ -862,11 +893,11 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
 });
 
 function allMonthKeys(){
-  const year = Number(todayISO().slice(0,4));
+  const year = selectedYear || Number(todayISO().slice(0,4));
   const keys = [];
   for(let m=1;m<=12;m++){ keys.push(year+'-'+String(m).padStart(2,'0')); }
   const dataKeys = new Set([...txns.map(t=>monthKey(t.date)), ...transfers.map(t=>monthKey(t.date))]);
-  dataKeys.forEach(k=>{ if(!keys.includes(k)) keys.push(k); });
+  dataKeys.forEach(k=>{ if(k.slice(0,4)===String(year) && !keys.includes(k)) keys.push(k); });
   keys.sort();
   return keys;
 }
@@ -886,7 +917,8 @@ const SEED_FIXED_COSTS = [ {name:'ค่าเน็ต AIS (340 x 12)', amount:
 let fixedCosts = [];
 
 function renderMonthlySummaryTable(){
-  const year = Number(todayISO().slice(0,4));
+  const year = selectedYear || Number(todayISO().slice(0,4));
+  document.getElementById('monthlySummaryYearLabel').textContent = year;
   let rowsHtml = '';
   let yIn=0, yOut=0;
   for(let m=1;m<=12;m++){
@@ -980,6 +1012,80 @@ function renderPortfolioAccSummary(){
     rows + '<tr style="font-weight:700"><td>รวมทั้งหมด</td><td style="text-align:right">฿'+fmtAmt(totIn)+'</td><td style="text-align:right">฿'+fmtAmt(totOut)+'</td></tr>' +
     '</tbody></table>';
 }
+
+/* ---------- EXPORT TO EXCEL ---------- */
+function exportYearToExcel(year){
+  if(typeof XLSX === 'undefined'){ showError('โหลดไลบรารี Excel ไม่สำเร็จ ลองรีเฟรชหน้าเว็บ'); return; }
+
+  // ---- Sheet 1: รายรับ-รายจ่าย ----
+  const yTx = txns.filter(t=>t.date.slice(0,4)===String(year)).sort((a,b)=>a.date.localeCompare(b.date));
+  const yTrf = transfers.filter(t=>t.date.slice(0,4)===String(year)).sort((a,b)=>a.date.localeCompare(b.date));
+  const aoa1 = [['วันที่','ประเภท','จำนวนเงิน','หมวดหมู่','หมายเหตุ']];
+  yTx.forEach(t=> aoa1.push([t.date, t.type, t.amount, t.category, t.note||'']));
+  aoa1.push([]);
+  aoa1.push(['รายการโอนเงินระหว่างบัญชี']);
+  aoa1.push(['วันที่','จากบัญชี','ไปบัญชี','จำนวนเงิน']);
+  yTrf.forEach(t=> aoa1.push([t.date, accName(t.from), accName(t.to), t.amount]));
+  aoa1.push([]);
+  aoa1.push(['สรุปรายเดือน', year]);
+  aoa1.push(['เดือน','รวมรายรับ','รวมรายจ่าย','สุทธิ']);
+  let yIn=0, yOut=0;
+  for(let m=1;m<=12;m++){
+    const key = year+'-'+String(m).padStart(2,'0');
+    const mt = yTx.filter(t=>monthKey(t.date)===key);
+    const inc = mt.filter(t=>t.type==='รับ').reduce((s,t)=>s+Number(t.amount),0);
+    const out = mt.filter(t=>t.type==='จ่าย').reduce((s,t)=>s+Number(t.amount),0);
+    yIn+=inc; yOut+=out;
+    aoa1.push([THAI_MONTHS[m-1], inc, out, inc-out]);
+  }
+  aoa1.push(['รวมทั้งปี', yIn, yOut, yIn-yOut]);
+  aoa1.push([]);
+  aoa1.push(['สรุปรายจ่ายตามหมวดหมู่ (ทั้งปีที่เลือก)']);
+  aoa1.push(['หมวดหมู่','รวมรายจ่าย']);
+  CATS.forEach(c=>{
+    const amt = yTx.filter(t=>t.type==='จ่าย' && t.category===c).reduce((s,t)=>s+Number(t.amount),0);
+    aoa1.push([c, amt]);
+  });
+  aoa1.push([]);
+  aoa1.push(['รายจ่ายคงที่ (Fixed Cost)']);
+  aoa1.push(['รายการ','จำนวน/เดือน']);
+  fixedCosts.forEach(f=> aoa1.push([f.name, f.amount]));
+  const ws1 = XLSX.utils.aoa_to_sheet(aoa1);
+
+  // ---- Sheet 2: ประวัติพอร์ต (transpose, เหมือนหน้า Portfolio) ----
+  const aoa2 = [['รายการ', ...alloc.map(a=>periodLabel(a))]];
+  ASSET_DEFS.forEach(d=>{
+    aoa2.push([d.name, ...alloc.map(a=>Number(a[d.key])||0)]);
+  });
+  aoa2.push(['รวม', ...alloc.map(a=>a.total)]);
+  const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
+
+  // ---- Sheet 3: เงินโอนพอร์ตเทรด ----
+  const yPf = ptxns.filter(p=>p.date.slice(0,4)===String(year)).sort((a,b)=>a.date.localeCompare(b.date));
+  const aoa3 = [['วันที่','บัญชี','รายการ','รายรับ (ถอน/กำไร)','รายจ่าย (ฝาก/เติม)']];
+  yPf.forEach(p=> aoa3.push([p.date, p.account, p.note||'', p.income||0, p.expense||0]));
+  const ws3 = XLSX.utils.aoa_to_sheet(aoa3);
+
+  // ---- Sheet 4: สรุปบัญชีและ Reserve (ณ วันที่ export) ----
+  const aoa4 = [['บัญชี','ยอดคงเหลือ (ณ วันที่ export)']];
+  accounts.forEach(a=> aoa4.push([a.name, a.balance]));
+  aoa4.push([]);
+  aoa4.push(['Reserve','เริ่มต้น','คงเหลือปัจจุบัน']);
+  reserves.forEach(r=> aoa4.push([r.name, r.initial, r.current]));
+  const ws4 = XLSX.utils.aoa_to_sheet(aoa4);
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws1, 'รายรับ-รายจ่าย');
+  XLSX.utils.book_append_sheet(wb, ws2, 'ประวัติพอร์ต');
+  XLSX.utils.book_append_sheet(wb, ws3, 'เงินโอนพอร์ตเทรด');
+  XLSX.utils.book_append_sheet(wb, ws4, 'สรุปบัญชี');
+  XLSX.writeFile(wb, 'FinanceOS_'+year+'.xlsx');
+}
+
+document.getElementById('exportExcelBtn').addEventListener('click', ()=>{
+  exportYearToExcel(selectedYear);
+});
+
 function renderTabs(keys){
   const cur = todayISO().slice(0,7);
   const tabsEl = document.getElementById('tabs');
