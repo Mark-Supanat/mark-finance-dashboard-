@@ -343,10 +343,12 @@
         <div class="card">
           <h3>รายจ่ายคงที่ <span class="sub">Fixed Cost</span></h3>
           <div id="fixedCostList"></div>
-          <form id="fixedCostForm" style="margin-top:10px;display:flex;gap:8px;">
-            <input type="text" id="fcName" placeholder="ชื่อรายการ" style="flex:1.4;">
-            <input type="number" id="fcAmount" placeholder="บาท/เดือน" style="flex:1;">
-            <button type="submit" class="submit" style="flex:0 0 auto;padding:9px 16px;">+ เพิ่ม</button>
+          <form id="fixedCostForm" style="margin-top:12px;">
+            <div class="form-row">
+              <input type="text" id="fcName" placeholder="ชื่อรายการ เช่น ค่ายูทูป">
+              <input type="number" id="fcAmount" placeholder="บาท/เดือน เช่น 100">
+            </div>
+            <button type="submit" class="submit">+ เพิ่มรายการ</button>
           </form>
         </div>
       </div>
