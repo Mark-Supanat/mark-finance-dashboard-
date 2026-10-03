@@ -860,56 +860,17 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
   if(selectedType==='โอน'){
     const from = document.getElementById('fFrom').value;
     const to = document.getElementById('fTo').value;
+    if(from===to){ showError('บัญชีต้นทางกับปลายทางต้องไม่ใช่บัญชีเดียวกัน'); submitBtn.disabled=false; return; }
+    const warn = negativeWarnings(from, to, amount);
+    if(warn.length && !confirm(warn.join('\n')+'\n\nยืนยันบันทึกต่อไหม?')){ submitBtn.disabled=false; return; }
     const resIdSel = document.getElementById('fReserve').value || null;
     const resDirSel = resIdSel ? document.getElementById('fReserveDir').value : null;
-    const row = {id:uid(), date, from, to, amount, reserveId:resIdSel, reserveDir:resDirSel};
-    const {error} = await sb.from('app_transfers').insert({id:row.id, date:row.date, from_account:from, to_account:to, amount, reserve_id:resIdSel, reserve_dir:resDirSel});
-    if(error){ showError('insert transfer: '+error.message); submitBtn.disabled=false; return; }
-    transfers.push(row);
-
-    // ปรับยอดบัญชีธนาคารจริง (ลดต้นทาง/เพิ่มปลายทาง เฉพาะที่เป็นบัญชีธนาคารจริง)
-    const fromAcc = accounts.find(a=>a.id===from);
-    const toAcc = accounts.find(a=>a.id===to);
-    if(fromAcc){
-      fromAcc.balance = Math.max(0, Number(fromAcc.balance) - amount);
-      await sb.from('app_accounts').update({balance:fromAcc.balance}).eq('id', fromAcc.id);
-    }
-    if(toAcc){
-      toAcc.balance = Number(toAcc.balance) + amount;
-      await sb.from('app_accounts').update({balance:toAcc.balance}).eq('id', toAcc.id);
-    }
-
-    // ถ้าต้นทาง/ปลายทางเป็นพอร์ตเทรด (Forex/TFEX) ปรับยอดพอร์ตปัจจุบัน + บันทึก log เงินโอนพอร์ตเทรด
-    if(isPortfolioAcc(to)){
-      const key = portfolioAssetKey(to);
-      currentPortfolio[key] = Number(currentPortfolio[key]||0) + amount;
-      currentPortfolio.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(currentPortfolio[k]||0),0);
-      await sb.from('app_portfolio_current').update({[key]:currentPortfolio[key], total:currentPortfolio.total}).eq('id','current');
-      const pRow = {id:uid(), date, account:portfolioAccLabel(to), income:0, expense:amount, note:'เติมพอร์ต '+portfolioAccLabel(to)+' (โอนจาก '+accName(from)+')', transfer_id:row.id};
-      const {error:pErr} = await sb.from('app_portfolio_transfers').insert(pRow);
-      if(pErr) showError('log portfolio transfer: '+pErr.message); else ptxns.push({id:pRow.id,date:pRow.date,account:pRow.account,income:pRow.income,expense:pRow.expense,note:pRow.note,transferId:pRow.transfer_id});
-    }
-    if(isPortfolioAcc(from)){
-      const key = portfolioAssetKey(from);
-      currentPortfolio[key] = Math.max(0, Number(currentPortfolio[key]||0) - amount);
-      currentPortfolio.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(currentPortfolio[k]||0),0);
-      await sb.from('app_portfolio_current').update({[key]:currentPortfolio[key], total:currentPortfolio.total}).eq('id','current');
-      const pRow = {id:uid(), date, account:portfolioAccLabel(from), income:amount, expense:0, note:'ถอนจากพอร์ต '+portfolioAccLabel(from)+' (โอนเข้า '+accName(to)+')', transfer_id:row.id};
-      const {error:pErr} = await sb.from('app_portfolio_transfers').insert(pRow);
-      if(pErr) showError('log portfolio transfer: '+pErr.message); else ptxns.push({id:pRow.id,date:pRow.date,account:pRow.account,income:pRow.income,expense:pRow.expense,note:pRow.note,transferId:pRow.transfer_id});
-    }
-
-    const resId = document.getElementById('fReserve').value;
-    const resDir = document.getElementById('fReserveDir').value;
-    if(resId){
-      const r = reserves.find(x=>x.id===resId);
-      if(r){
-        const newCurrent = Math.max(0, r.current + (resDir==='add' ? amount : -amount));
-        const {error:resErr} = await sb.from('app_reserves').update({current:newCurrent}).eq('id', r.id);
-        if(resErr) showError('update reserve from transfer: '+resErr.message);
-        else r.current = newCurrent;
-      }
-    }
+    const {error} = await sb.rpc('app_add_transfer', {
+      p_id: uid(), p_date: date, p_from: from, p_to: to, p_amount: amount,
+      p_reserve_id: resIdSel, p_reserve_dir: resDirSel
+    });
+    if(error){ showError('บันทึกการโอนไม่สำเร็จ (ไม่มีอะไรถูกเปลี่ยน): '+error.message); submitBtn.disabled=false; return; }
+    await refreshTransferState();
   }else{
     const category = document.getElementById('fCategory').value;
     const note = document.getElementById('fNote').value.trim();
@@ -1163,6 +1124,34 @@ function renderTabs(keys){
     tabsEl.appendChild(row);
   });
 }
+function negativeWarnings(from, to, amount){
+  const w = [];
+  const fromAcc = accounts.find(a=>a.id===from);
+  if(fromAcc && Number(fromAcc.balance) - amount < 0) w.push('⚠ ยอด '+fromAcc.name+' จะติดลบ (฿'+fmtAmt(Number(fromAcc.balance)-amount)+')');
+  if(isPortfolioAcc(from) && Number(currentPortfolio[portfolioAssetKey(from)]||0) - amount < 0) w.push('⚠ ยอดพอร์ต '+portfolioAccLabel(from)+' จะติดลบ');
+  return w;
+}
+
+// โหลดข้อมูลที่การโอนแตะต้อง กลับมาจากฐานข้อมูลใหม่ (ไม่ต้องคำนวณซ้ำฝั่งหน้าเว็บ)
+async function refreshTransferState(){
+  const [accRows, accAllocRows, curRows, resRows, trfRows, pfRows] = await Promise.all([
+    fetchAll('app_accounts'), fetchAll('app_account_allocations'), fetchAll('app_portfolio_current'),
+    fetchAll('app_reserves'), fetchAll('app_transfers','date'), fetchAll('app_portfolio_transfers','date')
+  ]);
+  accounts = accRows.map(r=>({
+    id:r.id, name:r.name, purpose:r.purpose, color:r.color, balance:Number(r.balance),
+    allocations: accAllocRows.filter(x=>x.account_id===r.id).map(x=>({label:x.label, amount:Number(x.amount)}))
+  }));
+  reserves = resRows.map(r=>({id:r.id, name:r.name, initial:Number(r.initial), current:Number(r.current), topup:Number(r.topup), maxTopups:Number(r.max_topups), used:Number(r.used)}));
+  if(curRows.length){
+    const r = curRows[0];
+    currentPortfolio = {thai_stock:Number(r.thai_stock), mega_stock:Number(r.mega_stock), forex:Number(r.forex), crypto:Number(r.crypto), cash:Number(r.cash), total:0};
+    currentPortfolio.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(currentPortfolio[k]||0),0);
+  }
+  transfers = trfRows.map(r=>({id:r.id, date:r.date, from:r.from_account, to:r.to_account, amount:Number(r.amount), reserveId:r.reserve_id||null, reserveDir:r.reserve_dir||null}));
+  ptxns = pfRows.map(r=>({id:r.id, date:r.date, account:r.account, income:Number(r.income), expense:Number(r.expense), note:r.note, transferId:r.transfer_id||null}));
+}
+
 async function deleteTransferWithReverse(id){
   const t = transfers.find(x=>x.id===id);
   if(!t) return;
@@ -1175,48 +1164,15 @@ async function deleteTransferWithReverse(id){
   const res = t.reserveId ? reserves.find(r=>r.id===t.reserveId) : null;
   if(res) lines.push('• '+res.name+' '+(t.reserveDir==='add'?'−':'+')+'฿'+fmtAmt(t.amount));
   else if(!t.reserveId) lines.push('(รายการนี้ไม่มีข้อมูล Reserve — ถ้าเคยผูก Reserve ไว้ ต้องแก้เองที่หน้า Portfolio)');
+  const negDel = [];
+  if(toAcc && Number(toAcc.balance) - t.amount < 0) negDel.push('⚠ ยอด '+toAcc.name+' จะติดลบ (฿'+fmtAmt(Number(toAcc.balance)-t.amount)+')');
+  if(isPortfolioAcc(t.to) && Number(currentPortfolio[portfolioAssetKey(t.to)]||0) - t.amount < 0) negDel.push('⚠ ยอดพอร์ต '+portfolioAccLabel(t.to)+' จะติดลบ');
+  lines.push(...negDel);
   if(!confirm(lines.join('\n'))) return;
 
-  const {error:delErr} = await sb.from('app_transfers').delete().eq('id', id);
-  if(delErr){ showError('delete transfer: '+delErr.message); return; }
-  transfers = transfers.filter(x=>x.id!==id);
-
-  const fails = [];
-  async function setBal(acc, delta){
-    const nb = Number(acc.balance) + delta;
-    const {error} = await sb.from('app_accounts').update({balance:nb}).eq('id', acc.id);
-    if(error) fails.push('ยอด '+acc.name+': '+error.message); else acc.balance = nb;
-  }
-  if(fromAcc) await setBal(fromAcc, +t.amount);
-  if(toAcc) await setBal(toAcc, -t.amount);
-
-  async function adjustPortfolio(accId, delta){
-    const key = portfolioAssetKey(accId);
-    currentPortfolio[key] = Math.max(0, Number(currentPortfolio[key]||0) + delta);
-    currentPortfolio.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(currentPortfolio[k]||0),0);
-    const {error} = await sb.from('app_portfolio_current').update({[key]:currentPortfolio[key], total:currentPortfolio.total}).eq('id','current');
-    if(error) fails.push('ยอดพอร์ต: '+error.message);
-    let logRow = ptxns.find(p=>p.transferId===id);
-    if(!logRow){
-      logRow = ptxns.find(p=>!p.transferId && p.date===t.date && p.account===portfolioAccLabel(accId) &&
-        Number(delta<0?p.expense:p.income)===Number(t.amount) && /โอน/.test(p.note||''));
-    }
-    if(logRow){
-      const {error:e2} = await sb.from('app_portfolio_transfers').delete().eq('id', logRow.id);
-      if(e2) fails.push('log พอร์ต: '+e2.message); else ptxns = ptxns.filter(p=>p.id!==logRow.id);
-    }else{
-      fails.push('ไม่พบ log พอร์ตที่ตรงกัน (ตรวจที่ตารางเงินโอนเข้า-ออกพอร์ตเทรด)');
-    }
-  }
-  if(isPortfolioAcc(t.to)) await adjustPortfolio(t.to, -t.amount);
-  if(isPortfolioAcc(t.from)) await adjustPortfolio(t.from, +t.amount);
-
-  if(res){
-    const nc = Math.max(0, res.current + (t.reserveDir==='add' ? -t.amount : +t.amount));
-    const {error} = await sb.from('app_reserves').update({current:nc}).eq('id', res.id);
-    if(error) fails.push('Reserve: '+error.message); else res.current = nc;
-  }
-  if(fails.length) showError('ย้อนยอดไม่ครบ → '+fails.join(' | '));
+  const {error} = await sb.rpc('app_delete_transfer', {p_id: id});
+  if(error){ showError('ลบการโอนไม่สำเร็จ (ไม่มีอะไรถูกเปลี่ยน): '+error.message); return; }
+  await refreshTransferState();
 }
 
 function renderMonthPanel(key){
