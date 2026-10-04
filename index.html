@@ -358,6 +358,26 @@
 
       <div class="card">
         <h3>เงินโอนเข้า-ออกพอร์ตเทรด <span class="sub">Forex / TFEX / S50 / MGO</span></h3>
+        <form id="pfForm" style="margin:12px 0 16px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+          <div class="form-row">
+            <div><label class="field-label">วันที่</label><input type="date" id="pfDate" required></div>
+            <div><label class="field-label">พอร์ต</label><select id="pfPort"><option value="port-forex">Forex</option><option value="port-tfex">TFEX</option></select></div>
+            <div><label class="field-label">รายการ</label><select id="pfDir"><option value="out">ถอนออกจากพอร์ต</option><option value="in">ฝากเข้าพอร์ต</option></select></div>
+          </div>
+          <div class="form-row">
+            <div><label class="field-label">จำนวนเงิน (บาท)</label><input type="number" id="pfAmount" step="0.01" min="0" placeholder="0" required></div>
+            <div><label class="field-label" id="pfAccLabel">เงินเข้าบัญชี</label><select id="pfAccount"></select></div>
+            <div><label class="field-label">หมายเหตุ</label><input type="text" id="pfNote" placeholder="เช่น 100 ดอล"></div>
+          </div>
+          <details style="margin-bottom:10px;">
+            <summary style="font-size:12px;color:var(--muted);cursor:pointer;">ตัวเลือกเพิ่มเติม: ผลต่อ Reserve</summary>
+            <div class="form-row" style="margin-top:8px;">
+              <div><label class="field-label">Reserve</label><select id="pfReserve"><option value="">ไม่เกี่ยวกับ Reserve</option></select></div>
+              <div><label class="field-label">ทิศทาง</label><select id="pfReserveDir"><option value="add">เพิ่มเข้า Reserve (+)</option><option value="use">ใช้จาก Reserve (-)</option></select></div>
+            </div>
+          </details>
+          <button type="submit" class="submit" id="pfSubmit">บันทึกการถอน/ฝากพอร์ต</button>
+        </form>
         <div id="portfolioFullLog"></div>
       </div>
       <div class="card">
@@ -809,15 +829,16 @@ function accName(id){
 
 /* ---------- ACTION TAB ---------- */
 function populateAccountSelects(){
-  const opts = accounts.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>').join('') +
-    '<optgroup label="พอร์ตเทรด">' +
-    '<option value="port-forex">พอร์ต Forex</option>' +
-    '<option value="port-tfex">พอร์ต TFEX</option>' +
-    '</optgroup>';
+  const opts = accounts.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>').join('');
   document.getElementById('fFrom').innerHTML = opts;
   document.getElementById('fTo').innerHTML = opts;
   const resOpts = '<option value="">ไม่เกี่ยวกับ Reserve</option>' + reserves.map(r=>'<option value="'+esc(r.id)+'">'+esc(r.name)+'</option>').join('');
   document.getElementById('fReserve').innerHTML = resOpts;
+  // ฟอร์มถอน/ฝากพอร์ต
+  document.getElementById('pfAccount').innerHTML = opts;
+  if(accounts.some(a=>a.id==='kbank1')) document.getElementById('pfAccount').value = 'kbank1';
+  document.getElementById('pfReserve').innerHTML = resOpts;
+  if(!document.getElementById('pfDate').value) document.getElementById('pfDate').value = todayISO();
 }
 function isPortfolioAcc(id){ return id==='port-forex' || id==='port-tfex'; }
 function portfolioAssetKey(id){ return id==='port-forex' ? 'forex' : 'thai_stock'; }
@@ -995,35 +1016,110 @@ document.getElementById('fixedCostForm').addEventListener('submit', async (e)=>{
   renderFixedCostList();
 });
 
+document.getElementById('pfDir').addEventListener('change', ()=>{
+  document.getElementById('pfAccLabel').textContent = document.getElementById('pfDir').value==='out' ? 'เงินเข้าบัญชี' : 'ตัดจากบัญชี';
+});
+document.getElementById('pfForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById('pfSubmit');
+  btn.disabled = true;
+  const date = document.getElementById('pfDate').value || todayISO();
+  const port = document.getElementById('pfPort').value;
+  const dir = document.getElementById('pfDir').value;       // out = ถอนออกจากพอร์ต, in = ฝากเข้าพอร์ต
+  const acc = document.getElementById('pfAccount').value;
+  const note = document.getElementById('pfNote').value.trim();
+  const amount = parseFloat(document.getElementById('pfAmount').value);
+  if(!amount || amount<=0 || !acc){ btn.disabled=false; return; }
+  const from = dir==='out' ? port : acc;
+  const to = dir==='out' ? acc : port;
+  const warn = negativeWarnings(from, to, amount);
+  if(warn.length && !confirm(warn.join('\n')+'\n\nยืนยันบันทึกต่อไหม?')){ btn.disabled=false; return; }
+  const resId = document.getElementById('pfReserve').value || null;
+  const resDir = resId ? document.getElementById('pfReserveDir').value : null;
+  const {error} = await sb.rpc('app_add_transfer', {
+    p_id: uid(), p_date: date, p_from: from, p_to: to, p_amount: amount,
+    p_reserve_id: resId, p_reserve_dir: resDir, p_note: note || null
+  });
+  if(error){ showError('บันทึกไม่สำเร็จ (ไม่มีอะไรถูกเปลี่ยน): '+error.message); btn.disabled=false; return; }
+  await refreshTransferState();
+  document.getElementById('pfAmount').value = '';
+  document.getElementById('pfNote').value = '';
+  renderActionTab(); renderOverview(); renderPortfolioTab();
+  btn.disabled = false;
+});
+
+async function deletePortfolioLogRow(id){
+  const p = ptxns.find(x=>x.id===id);
+  if(!p) return;
+  let tid = p.transferId;
+  if(!tid && (p.account==='Forex' || p.account==='TFEX')){
+    // แถวที่สร้างจากฟอร์มโอนรุ่นก่อน (ยังไม่มี transfer_id): หารายการโอนคู่กันจากวันที่/พอร์ต/ยอด
+    const portId = p.account==='Forex' ? 'port-forex' : 'port-tfex';
+    const m = transfers.find(t=>t.date===p.date && (p.income>0 ? (t.from===portId && t.amount===p.income) : (t.to===portId && t.amount===p.expense)));
+    if(m) tid = m.id;
+  }
+  if(tid && !transfers.some(t=>t.id===tid)) tid = null;   // ลิงก์ชี้ไปรายการโอนที่ไม่มีแล้ว → ลบเฉพาะบันทึก (พร้อมถามก่อน)
+  if(tid){
+    await deleteTransferWithReverse(tid);          // มีหน้าต่างยืนยัน + ย้อนยอดบัญชี/พอร์ต/Reserve ให้ครบ
+    if(ptxns.some(x=>x.id===id)){                  // กันกรณีแถว log ยังค้างอยู่
+      const {error} = await sb.from('app_portfolio_transfers').delete().eq('id', id);
+      if(!error) ptxns = ptxns.filter(x=>x.id!==id);
+    }
+  }else{
+    const d = p.date.slice(8,10)+'/'+p.date.slice(5,7)+'/'+p.date.slice(0,4);
+    if(!confirm('ลบเฉพาะบันทึกนี้ ('+d+' '+p.account+' ฿'+fmtAmt(p.income||p.expense)+')\nรายการนี้ไม่มีข้อมูลการโอนผูกอยู่ จึงไม่ปรับยอดบัญชีหรือยอดพอร์ตใดๆ')) return;
+    const {error} = await sb.from('app_portfolio_transfers').delete().eq('id', id);
+    if(error){ showError('ลบไม่สำเร็จ: '+error.message); return; }
+    ptxns = ptxns.filter(x=>x.id!==id);
+  }
+  renderActionTab(); renderOverview(); renderPortfolioTab();
+}
+
 function renderPortfolioFullLog(){
   const sorted = ptxns.slice().sort((a,b)=>a.date.localeCompare(b.date));
-  document.getElementById('portfolioFullLog').innerHTML =
-    '<div style="max-height:340px;overflow-y:auto;"><table class="tx"><thead><tr><th>วันที่</th><th>บัญชี</th><th>รายการ</th><th style="text-align:right">รายรับ (ถอน/กำไร)</th><th style="text-align:right">รายจ่าย (ฝาก/เติม)</th></tr></thead><tbody>' +
+  const el = document.getElementById('portfolioFullLog');
+  el.innerHTML =
+    '<div style="max-height:340px;overflow-y:auto;"><table class="tx"><thead><tr><th>วันที่</th><th>บัญชี</th><th>รายการ</th><th style="text-align:right">ถอนออก</th><th style="text-align:right">ฝากเข้า</th><th></th></tr></thead><tbody>' +
     sorted.map(p=>{
       const d = p.date.slice(8,10)+'/'+p.date.slice(5,7)+'/'+p.date.slice(0,4);
       return '<tr><td style="color:var(--muted)">'+d+'</td><td>'+esc(p.account)+'</td><td>'+esc(p.note||'-')+'</td>' +
         '<td style="text-align:right;color:var(--income)">'+(p.income?'฿'+fmtAmt(p.income):'')+'</td>' +
-        '<td style="text-align:right;color:var(--expense)">'+(p.expense?'฿'+fmtAmt(p.expense):'')+'</td></tr>';
+        '<td style="text-align:right;color:var(--expense)">'+(p.expense?'฿'+fmtAmt(p.expense):'')+'</td>' +
+        '<td style="text-align:right"><button class="del-btn" data-pf="'+esc(p.id)+'" title="ลบ">×</button></td></tr>';
     }).join('') + '</tbody></table></div>';
+  el.querySelectorAll('[data-pf]').forEach(btn=>{ btn.onclick = ()=>deletePortfolioLogRow(btn.dataset.pf); });
 }
 
 function renderPortfolioAccSummary(){
+  const cur = (typeof currentPortfolio==='object' && currentPortfolio) ? currentPortfolio : {};
   const groups = [
-    {label:'Forex', accs:['Forex']},
-    {label:'TFEX', accs:['TFEX','S50','MGO']}
+    {label:'Forex', accs:['Forex'], now:Number(cur.forex||0)},
+    {label:'TFEX', accs:['TFEX','S50','MGO'], now:Number(cur.thai_stock||0)}
   ];
-  let totIn=0, totOut=0;
-  const rows = groups.map(g=>{
+  const signed = (n)=> (n<0?'−':'+')+'฿'+fmtAmt(Math.abs(n));
+  const col = (n)=> n<0 ? 'var(--expense)' : 'var(--income)';
+  let totOut=0, totIn=0, totNow=0;
+  const rowsHtml = groups.map(g=>{
     const rows = ptxns.filter(p=>g.accs.includes(p.account));
-    const inc = rows.reduce((s,p)=>s+Number(p.income||0),0);
-    const out = rows.reduce((s,p)=>s+Number(p.expense||0),0);
-    totIn+=inc; totOut+=out;
-    return '<tr><td>'+g.label+'</td><td style="text-align:right">฿'+fmtAmt(inc)+'</td><td style="text-align:right">฿'+fmtAmt(out)+'</td></tr>';
+    const out = rows.reduce((s,p)=>s+Number(p.income||0),0);    // ถอนออกจากพอร์ต
+    const inn = rows.reduce((s,p)=>s+Number(p.expense||0),0);   // ฝากเข้าพอร์ต
+    const net = out - inn, pl = out + g.now - inn;
+    totOut+=out; totIn+=inn; totNow+=g.now;
+    return '<tr><td>'+g.label+'</td><td style="text-align:right">฿'+fmtAmt(out)+'</td><td style="text-align:right">฿'+fmtAmt(inn)+'</td>' +
+      '<td style="text-align:right;color:'+col(net)+'">'+signed(net)+'</td><td style="text-align:right">฿'+fmtAmt(g.now)+'</td>' +
+      '<td style="text-align:right;font-weight:600;color:'+col(pl)+'">'+signed(pl)+'</td></tr>';
   }).join('');
+  const tNet = totOut - totIn, tPl = totOut + totNow - totIn;
   document.getElementById('portfolioAccSummary').innerHTML =
-    '<table class="tx"><thead><tr><th>บัญชี</th><th style="text-align:right">รวมถอน/กำไร (รับ)</th><th style="text-align:right">รวมฝาก/เติม (จ่าย)</th></tr></thead><tbody>' +
-    rows + '<tr style="font-weight:700"><td>รวมทั้งหมด</td><td style="text-align:right">฿'+fmtAmt(totIn)+'</td><td style="text-align:right">฿'+fmtAmt(totOut)+'</td></tr>' +
-    '</tbody></table>';
+    '<div style="overflow-x:auto;"><table class="tx"><thead><tr><th>พอร์ต</th><th style="text-align:right">ถอนออก</th><th style="text-align:right">ฝากเข้า</th>' +
+    '<th style="text-align:right">สุทธิ (ถอน − ฝาก)</th><th style="text-align:right">มูลค่าพอร์ตตอนนี้</th><th style="text-align:right">กำไร/ขาดทุนโดยประมาณ</th></tr></thead><tbody>' +
+    rowsHtml + '<tr style="font-weight:700"><td>รวม Forex + TFEX</td><td style="text-align:right">฿'+fmtAmt(totOut)+'</td><td style="text-align:right">฿'+fmtAmt(totIn)+'</td>' +
+    '<td style="text-align:right;color:'+col(tNet)+'">'+signed(tNet)+'</td><td style="text-align:right">฿'+fmtAmt(totNow)+'</td>' +
+    '<td style="text-align:right;color:'+col(tPl)+'">'+signed(tPl)+'</td></tr></tbody></table></div>' +
+    '<div style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6;">' +
+    'ยอดถอน/ฝากนี้ไม่ได้นับเป็นรายรับ-รายจ่ายของเดือน<br>' +
+    'กำไร/ขาดทุนโดยประมาณ = ถอนออก + มูลค่าพอร์ตตอนนี้ − ฝากเข้า · มูลค่าพอร์ตดึงจากหน้า Overview (TFEX ใช้ค่า "หุ้นไทย + TFEX") ' +
+    'แม่นเมื่อประวัติฝากครบตั้งแต่ต้น ถ้ามีเงินตั้งต้นก่อนเริ่มบันทึกตัวเลขจะคลาดเคลื่อน</div>';
 }
 
 /* ---------- EXPORT TO EXCEL ---------- */
@@ -1075,7 +1171,7 @@ function exportYearToExcel(year){
 
   // ---- Sheet 3: เงินโอนพอร์ตเทรด ----
   const yPf = ptxns.filter(p=>p.date.slice(0,4)===String(year)).sort((a,b)=>a.date.localeCompare(b.date));
-  const aoa3 = [['วันที่','บัญชี','รายการ','รายรับ (ถอน/กำไร)','รายจ่าย (ฝาก/เติม)']];
+  const aoa3 = [['วันที่','บัญชี','รายการ','ถอนออก','ฝากเข้า']];
   yPf.forEach(p=> aoa3.push([p.date, p.account, p.note||'', p.income||0, p.expense||0]));
   const ws3 = XLSX.utils.aoa_to_sheet(aoa3);
 
