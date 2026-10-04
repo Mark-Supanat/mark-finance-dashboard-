@@ -411,24 +411,26 @@
     <!-- PORTFOLIO -->
     <div class="view" id="view-portfolio">
       <div class="card">
-        <h3>ประวัติพอร์ต <span class="sub">รายเดือน/รายปี — แก้ตัวเลขในตาราง หรือเพิ่มคอลัมน์ใหม่ท้ายสุด</span></h3>
-        <div id="allocHistoryTable" style="overflow-x:auto;"></div>
-        <div class="form-row" style="margin-top:14px;align-items:flex-end;">
-          <div><label class="field-label">ป้ายชื่อคอลัมน์ใหม่</label><input type="text" id="newColLabel" placeholder="เช่น ต.ค. 2026"></div>
-          <div><button type="button" class="submit" id="addColBtn">+ เพิ่มคอลัมน์ (ก็อปค่าจากคอลัมน์ล่าสุด)</button></div>
+        <h3>ประวัติพอร์ต <span class="sub">ยอดต้นเดือนของแต่ละเดือน — กรอกเองจากยอดจริงในแอปโบรกเกอร์</span></h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+          <select id="pfYearSel" style="width:auto;min-width:110px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:inherit;font-weight:600;"></select>
+          <button type="button" class="small-btn" id="pfAddYearBtn">+ เพิ่มปี</button>
         </div>
+        <div id="pfImportBanner"></div>
+        <div id="pfLockBanner"></div>
+        <div id="pfYearSummary"></div>
+        <div id="allocHistoryTable" style="overflow-x:auto;"></div>
+        <div style="margin-top:14px;"><button type="button" class="submit" id="addColBtn" style="width:auto;padding:9px 18px;">+ เพิ่มเดือนถัดไป (ก็อปค่าจากเดือนล่าสุด)</button></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6;">แถว <b>เงินนอกเข้า/ออก</b> = เงินที่เติมเข้าพอร์ต(+) หรือดึงออกไปใช้นอกระบบ(−) ในช่วงระหว่างเดือนก่อนหน้าถึงเดือนนี้ ระบบจะหักออกก่อนคำนวณ "เปลี่ยนแปลง" เพื่อให้เห็นผลลัพธ์จริงของการลงทุน<br>คอลัมน์สีเทา = ยอดอ้างอิงจากปีถัดไป/ปีก่อนหน้า (แก้ที่ปีนั้น)</div>
       </div>
       <div class="card">
         <h3>แนวโน้มพอร์ตรวม (Equity Curve) <span class="sub">2024 – ปัจจุบัน</span></h3>
         <div style="position:relative;height:220px;"><canvas id="allocEquityChart"></canvas></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px;">🟠 จุดสีส้ม = เดือนที่มีเงินนอกเข้า/ออก (กราฟขึ้น/ลงตรงนั้นไม่ใช่กำไร/ขาดทุนทั้งหมด)</div>
       </div>
       <div class="card">
         <h3>Reserve Management</h3>
         <div id="reserveManage"></div>
-      </div>
-      <div class="card">
-        <h3>รายจ่ายตามหมวดหมู่ <span class="sub">สะสมทั้งหมด</span></h3>
-        <div id="insCatBars"></div>
       </div>
     </div>
 
@@ -460,6 +462,7 @@ const SEED_RES = [
   {id:'tfex', name:'TFEX Reserve', initial:13000, current:13000, topup:0, maxTopups:0, used:0}
 ];
 
+let pfExtReady=true, selectedPfYear=null;
 let txns=[], ptxns=[], alloc=[], accounts=[], reserves=[], transfers=[];
 let currentPortfolio = {thai_stock:0, mega_stock:0, forex:0, crypto:0, cash:0, total:0};
 let activeMonth = null;
@@ -551,8 +554,9 @@ async function loadAllData(){
   alloc = allocRows.map(r=>({
     id:r.id, month:r.month, label:r.label, note:r.note, shortLabel:r.short_label,
     thai_stock:Number(r.thai_stock), mega_stock:Number(r.mega_stock), forex:Number(r.forex),
-    crypto:Number(r.crypto), cash:Number(r.cash), total:Number(r.total)
+    crypto:Number(r.crypto), cash:Number(r.cash), total:Number(r.total), external:Number(r.external||0)
   }));
+  pfExtReady = allocRows.length===0 || ('external' in allocRows[0]);
   if(alloc.length===0){
     for(let i=0;i<SEED_AL.length;i++){
       const a = SEED_AL[i];
@@ -562,6 +566,7 @@ async function loadAllData(){
     }
     alloc = SEED_AL.map((a,i)=>Object.assign({id:'alloc-'+a.month}, a));
   }
+  normalizeAlloc();
 
   if(curRows.length===0){
     const last = alloc[alloc.length-1] || {thai_stock:0,mega_stock:0,forex:0,crypto:0,cash:0,total:0};
@@ -674,6 +679,7 @@ async function init(){
   await loadArchives();
   activeMonth = todayISO().slice(0,7);
   selectedYear = Number(todayISO().slice(0,4));
+  selectedPfYear = selectedYear;
 
   populateAccountSelects();
   renderYearSelector();
@@ -710,6 +716,7 @@ document.querySelectorAll('.nav-item').forEach(item=>{
     document.getElementById('view-'+item.dataset.view).classList.add('active');
     document.getElementById('sidebar').classList.remove('open');
     if(item.dataset.view==='archive') renderArchive();
+    if(item.dataset.view==='portfolio') renderPortfolioTab();
   });
 });
 document.getElementById('menuToggle').addEventListener('click', ()=>{
@@ -1248,6 +1255,7 @@ function archiveYearList(){
   const ys = new Set(availableYears().map(String));
   Object.keys(archives).forEach(y=>ys.add(y));
   ptxns.forEach(p=>ys.add(p.date.slice(0,4)));
+  alloc.forEach(a=>ys.add(a._ym.slice(0,4)));
   return Array.from(ys).sort().reverse();
 }
 
@@ -1312,6 +1320,15 @@ function renderArchiveDetail(y){
         R(['<b>Net Worth</b>','<b>฿'+fmtAmt(bs.netWorth)+'</b>']) +
         bs.reserves.map(r=>R(['Reserve: '+esc(r.name), '฿'+fmtAmt(r.current)+' / ฿'+fmtAmt(r.initial)])).join(''));
   }
+  {
+    const pst = pfYearStats(y), pcols = pfColumnsForYear(y);
+    if(pcols.length){
+      html += '<h3 style="margin-top:18px;">ประวัติพอร์ตปี '+esc(y)+' <span class="sub">ยอดต้นเดือน (กรอกเอง)</span></h3>';
+      if(pst) html += '<div style="font-size:13px;margin-bottom:10px;">ต้นปี <b>฿'+fmtAmt(pst.first.a.total)+'</b> → '+(pst.closed?'สิ้นปี':'ล่าสุด')+' <b>฿'+fmtAmt(pst.last.a.total)+'</b> · ผลจริง (ไม่รวมเงินนอก) <b style="color:'+colr(pst.real)+'">'+signedNum(pst.real)+' ('+(pst.pct>=0?'+':'')+pst.pct.toFixed(1)+'%)</b>'+(pst.ext?' <span style="color:var(--muted)">· เงินนอก '+signedNum(pst.ext)+'</span>':'')+'</div>';
+      html += tbl(['เดือน','หุ้นไทย+TFEX','หุ้นเมกา+จีน','Forex','คริปโต','เงินสด','รวม','เงินนอก'], pcols.map(c=>R([esc(monthLabel(c.a._ym))+(c.ref?' <span style="color:var(--muted);font-size:10px;">('+(c.role==='open'?'ต้นปี':'สิ้นปี')+')</span>':''), fmtAmt(c.a.thai_stock), fmtAmt(c.a.mega_stock), fmtAmt(c.a.forex), fmtAmt(c.a.crypto), fmtAmt(c.a.cash), '<b>'+fmtAmt(c.a.total)+'</b>', c.a.external?signedNum(c.a.external):''])).join(''));
+      html += '<div class="no-print" style="margin-top:8px;"><button class="small-btn" id="arcPfOpen">เปิดหน้า Portfolio ของปี '+esc(y)+'</button></div>';
+    }
+  }
   html += '<h3 style="margin-top:18px;">รายเดือน</h3>' +
     tbl(['เดือน','รายรับ','รายจ่าย','สุทธิ'], st.months.map((m,i)=>R([THAI_MONTHS[i], '฿'+fmtAmt(m.inc), '฿'+fmtAmt(m.exp), '<span style="color:'+colr(m.inc-m.exp)+'">'+signedBaht(m.inc-m.exp)+'</span>'])).join('') +
       R(['<b>รวม</b>','<b>฿'+fmtAmt(st.income)+'</b>','<b>฿'+fmtAmt(st.expense)+'</b>','<b>'+signedBaht(st.net)+'</b>']));
@@ -1335,6 +1352,8 @@ function renderArchiveDetail(y){
     '</details></div>';
   el.innerHTML = html;
   document.getElementById('arcXlsx').onclick = ()=>exportYearToExcel(Number(y));
+  const pfOpen = document.getElementById('arcPfOpen');
+  if(pfOpen) pfOpen.onclick = ()=>{ selectedPfYear = Number(y); const nav = document.querySelector('.nav-item[data-view="portfolio"]'); if(nav) nav.click(); };
   document.getElementById('arcPdf').onclick = ()=>{ el.querySelectorAll('details').forEach(d=>d.open=true); window.print(); };
 }
 
@@ -1378,11 +1397,13 @@ function exportYearToExcel(year){
   const ws1 = XLSX.utils.aoa_to_sheet(aoa1);
 
   // ---- Sheet 2: ประวัติพอร์ต (transpose, เหมือนหน้า Portfolio) ----
-  const aoa2 = [['รายการ', ...alloc.map(a=>periodLabel(a))]];
+  const pcols = pfColumnsForYear(year);
+  const aoa2 = [['รายการ', ...pcols.map(c=>periodLabel(c.a)+(c.ref?(c.role==='open'?' (ต้นปี)':' (สิ้นปี)'):''))]];
   ASSET_DEFS.forEach(d=>{
-    aoa2.push([d.name, ...alloc.map(a=>Number(a[d.key])||0)]);
+    aoa2.push([d.name, ...pcols.map(c=>Number(c.a[d.key])||0)]);
   });
-  aoa2.push(['รวม', ...alloc.map(a=>a.total)]);
+  aoa2.push(['รวม', ...pcols.map(c=>c.a.total)]);
+  aoa2.push(['เงินนอกเข้า/ออก (+/−)', ...pcols.map((c,i)=>i===0?'':(Number(c.a.external)||0))]);
   const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
 
   // ---- Sheet 3: เงินโอนพอร์ตเทรด ----
@@ -1565,83 +1586,253 @@ const ASSET_DEFS = [
 ];
 // ใช้เฉพาะสินทรัพย์ที่ลงทุนจริง (ไม่รวมเงินสด เพราะเงินสด = ยอดรวม My Accounts อยู่แล้ว ป้องกันนับซ้ำใน Net Worth)
 const OVERVIEW_ASSET_DEFS = ASSET_DEFS.filter(d=>d.key!=='cash');
-function periodLabel(a){ return a.label || monthLabel(a.month); }
+function pad2(n){ return String(n).padStart(2,'0'); }
+function parseAllocYM(a){
+  const m = String(a.month||'');
+  if(/^\d{4}-\d{2}$/.test(m)){
+    const so = /^สิ้นปี\s*(\d{4})/.exec(a.label||'');
+    if(so) return (Number(so[1])+1)+'-01';      // "สิ้นปี 2024" = ยอดต้นเดือน ม.ค. 2025
+    return m;
+  }
+  const lb = String(a.label||'');
+  const y = /20\d\d/.exec(lb);
+  const mi = THAI_MONTHS.findIndex(t=>lb.includes(t));
+  if(y && mi>=0) return y[0]+'-'+pad2(mi+1);
+  return null;
+}
+function normalizeAlloc(){
+  let prev = null;
+  alloc.forEach(a=>{
+    a.external = Number(a.external||0);
+    let ym = parseAllocYM(a);
+    if(!ym){
+      if(prev){ let [y,mo]=prev.split('-').map(Number); mo++; if(mo>12){mo=1;y++;} ym = y+'-'+pad2(mo); }
+      else ym = todayISO().slice(0,7);
+    }
+    a._ym = ym; prev = ym;
+  });
+  alloc = alloc.map((a,i)=>[a,i]).sort((p,q)=>p[0]._ym.localeCompare(q[0]._ym) || p[1]-q[1]).map(x=>x[0]);
+}
+function periodLabel(a){ return monthLabel(a._ym); }
 function periodShortLabel(a){
   if(a.shortLabel) return a.shortLabel;
-  const parts = a.month.split('-');
+  const parts = a._ym.split('-');
   return THAI_MONTHS[Number(parts[1])-1] + ' \'' + parts[0].slice(2);
 }
 function recomputeTotal(a){
   a.total = ASSET_DEFS.reduce((s,d)=>s+Number(a[d.key]||0),0);
 }
+function signedNum(n){ return (n>=0?'+':'−')+fmtAmt(Math.abs(n)); }
+
+let pfExtraYears = new Set();
+function pfYears(){
+  const ys = new Set(pfExtraYears);
+  alloc.forEach(a=>ys.add(Number(a._ym.slice(0,4))));
+  ys.add(Number(todayISO().slice(0,4)));
+  return Array.from(ys).sort();
+}
+// คอลัมน์ของปี y: [ยอดต้นปีอ้างอิง ถ้าไม่มี ม.ค.] + เดือนในปี + [ยอดสิ้นปี = ม.ค. ปีถัดไป]
+function pfColumnsForYear(y){
+  y = Number(y);
+  const cols = [];
+  const inY = alloc.filter(a=>Number(a._ym.slice(0,4))===y);
+  const hasJan = inY.some(a=>a._ym===y+'-01');
+  if(!hasJan){
+    const earlier = alloc.filter(a=>a._ym < y+'-01');
+    if(earlier.length) cols.push({a:earlier[earlier.length-1], ref:true, role:'open'});
+  }
+  inY.forEach(a=>cols.push({a, ref:false, role:'month'}));
+  const nx = alloc.find(a=>a._ym===(y+1)+'-01');
+  if(nx) cols.push({a:nx, ref:true, role:'close'});
+  return cols;
+}
+function pfYearStats(y){
+  const cols = pfColumnsForYear(y);
+  if(cols.length<2) return null;
+  const first = cols[0], last = cols[cols.length-1];
+  const ext = cols.slice(1).reduce((s,c)=>s+Number(c.a.external||0),0);
+  const change = last.a.total - first.a.total;
+  const real = change - ext;
+  return {first, last, ext, change, real, pct: first.a.total ? real/first.a.total*100 : 0, closed:last.role==='close'};
+}
+function pfColHead(c){
+  const a = c.a;
+  let sub = '';
+  if(c.role==='open') sub = 'ยอดต้นปี · อ้างอิง';
+  else if(c.role==='close') sub = 'ยอดสิ้นปี · อ้างอิง';
+  else if(a.label && a.label!==monthLabel(a._ym)) sub = a.label;
+  else if(a._ym.endsWith('-01')) sub = 'ต้นปี';
+  if(a.note) sub += (sub?' · ':'')+a.note;
+  return esc(monthLabel(a._ym)) + (sub?'<br><span style="font-weight:400;color:var(--muted);font-size:9.5px;">'+esc(sub)+'</span>':'');
+}
+
+function renderPfYearSelector(){
+  const sel = document.getElementById('pfYearSel');
+  sel.innerHTML = pfYears().map(y=>'<option value="'+y+'"'+(y===Number(selectedPfYear)?' selected':'')+'>'+y+'</option>').join('');
+}
+document.getElementById('pfYearSel').addEventListener('change', e=>{
+  selectedPfYear = Number(e.target.value);
+  renderPortfolioTab();
+});
+
+const PF2025 = [{"m":"2025-02","t":29682,"u":38917,"f":13000,"c":10500,"k":28100},{"m":"2025-03","t":45237.87,"u":0,"f":8330,"c":9690,"k":46859},{"m":"2025-04","t":49150,"u":10000,"f":8942,"c":7500,"k":23000},{"m":"2025-05","t":24233,"u":15400,"f":21250,"c":6400,"k":27200},{"m":"2025-06","t":24233,"u":26000,"f":20666,"c":0,"k":22000},{"m":"2025-07","t":54800,"u":0,"f":23000,"c":0,"k":15220},{"m":"2025-08","t":52311,"u":0,"f":21027,"c":0,"k":14500},{"m":"2025-09","t":24233,"u":5625,"f":34880,"c":0,"k":21000},{"m":"2025-11","t":24233,"u":0,"f":29532,"c":0,"k":20500},{"m":"2025-12","t":24233,"u":0,"f":28500,"c":0,"k":19400}];
+function pf2025Flag(){ try{ return localStorage.getItem('pf2025Imported')==='1'; }catch(e){ return false; } }
+function setPf2025Flag(){ try{ localStorage.setItem('pf2025Imported','1'); }catch(e){} }
+function renderPfImportBanner(){
+  const el = document.getElementById('pfImportBanner');
+  const has = alloc.some(a=>a._ym>='2025-02' && a._ym<='2025-12');
+  if(has || pf2025Flag() || guardLockedQuiet(2025)){ el.innerHTML=''; return; }
+  el.innerHTML = '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-size:12.5px;margin-bottom:12px;">' +
+    '📥 พบข้อมูลพอร์ตปี 2025 จากไฟล์ Excel ของคุณ (ก.พ.–ธ.ค. ไม่รวม ต.ค. เพราะในไฟล์ว่าง) — ใส่เข้าตารางเลยไหม? <div style="margin-top:8px;display:flex;gap:8px;">' +
+    '<button type="button" class="small-btn" id="pfImportYes">นำเข้าปี 2025</button><button type="button" class="small-btn" id="pfImportNo">ไม่ต้อง</button></div></div>';
+  document.getElementById('pfImportYes').onclick = importPf2025;
+  document.getElementById('pfImportNo').onclick = ()=>{ setPf2025Flag(); renderPfImportBanner(); };
+}
+function guardLockedQuiet(y){ return isYearLocked(y); }
+async function importPf2025(){
+  let i = 0;
+  for(const r of PF2025){
+    const a = {id:'alloc-'+r.m, month:r.m, label:null, note:null, shortLabel:null, thai_stock:r.t, mega_stock:r.u, forex:r.f, crypto:r.c, cash:r.k, external:0};
+    recomputeTotal(a);
+    const {error} = await sb.from('app_portfolio_allocations').insert({id:a.id, sort_order:200+i, month:a.month, thai_stock:a.thai_stock, mega_stock:a.mega_stock, forex:a.forex, crypto:a.crypto, cash:a.cash, total:a.total});
+    if(error){ showError('นำเข้าปี 2025 ไม่สำเร็จ: '+error.message); return; }
+    alloc.push(a); i++;
+  }
+  setPf2025Flag();
+  normalizeAlloc();
+  selectedPfYear = 2025;
+  renderPortfolioTab(); renderOverview();
+}
+
+function renderPfYearSummary(){
+  const el = document.getElementById('pfYearSummary');
+  const y = selectedPfYear, st = pfYearStats(y);
+  document.getElementById('pfLockBanner').innerHTML = isYearLocked(y)
+    ? '<div style="font-size:12.5px;margin-bottom:10px;">🔒 ปี '+y+' ปิดแล้ว (อ่านอย่างเดียว) — ปลดล็อกได้ที่เมนู "ข้อมูลย้อนหลัง"</div>' : '';
+  if(!st){ el.innerHTML = '<div class="empty-note" style="margin-bottom:10px;">ปี '+y+' ยังไม่มีข้อมูลพอร์ตพอให้สรุป</div>'; return; }
+  const col = n=> n<0?'var(--expense)':(n>0?'var(--income)':'var(--muted)');
+  el.innerHTML = '<div style="display:flex;gap:22px;flex-wrap:wrap;font-size:13px;margin-bottom:12px;">' +
+    '<span>ต้นปี <b>฿'+fmtAmt(st.first.a.total)+'</b></span>' +
+    '<span>'+(st.closed?'สิ้นปี':'ล่าสุด ('+esc(monthLabel(st.last.a._ym))+')')+' <b>฿'+fmtAmt(st.last.a.total)+'</b></span>' +
+    '<span>ผลจริง (ไม่รวมเงินนอก) <b style="color:'+col(st.real)+'">'+signedNum(st.real)+' ('+(st.pct>=0?'+':'')+st.pct.toFixed(1)+'%)</b></span>' +
+    (st.ext ? '<span style="color:var(--muted)">เงินนอกเข้า/ออก '+signedNum(st.ext)+' · ก่อนหัก '+signedNum(st.change)+'</span>' : '') +
+    '</div>';
+}
 
 function renderAllocHistoryTable(){
+  renderPfYearSelector(); renderPfImportBanner(); renderPfYearSummary();
   const wrap = document.getElementById('allocHistoryTable');
-  let html = '<table class="tx" style="min-width:'+(160+alloc.length*110)+'px;"><thead><tr><th style="position:sticky;left:0;background:var(--card);">รายการ</th>';
-  alloc.forEach((a,i)=>{
-    html += '<th style="text-align:right;white-space:nowrap;">'+esc(periodLabel(a))+(a.note?'<br><span style="font-weight:400;color:var(--muted);font-size:9.5px;">'+esc(a.note)+'</span>':'')+
-      (alloc.length>1?' <button class="del-btn" data-col="'+i+'" title="ลบคอลัมน์นี้">×</button>':'')+'</th>';
+  const cols = pfColumnsForYear(selectedPfYear);
+  if(!cols.length){ wrap.innerHTML = '<div class="empty-note">ยังไม่มีข้อมูลของปี '+selectedPfYear+' — กด "+ เพิ่มเดือนถัดไป" เพื่อเริ่มต้น</div>'; return; }
+  const sticky = 'position:sticky;left:0;background:var(--card);';
+  const refBg = 'background:var(--bg);';
+  let html = '<table class="tx" style="min-width:'+(160+cols.length*110)+'px;"><thead><tr><th style="'+sticky+'">รายการ</th>';
+  cols.forEach(c=>{
+    html += '<th style="text-align:right;white-space:nowrap;'+(c.ref?refBg:'')+'">'+pfColHead(c)+
+      (!c.ref && alloc.length>1?' <button class="del-btn" data-del="'+esc(c.a.id)+'" title="ลบคอลัมน์นี้">×</button>':'')+'</th>';
   });
   html += '</tr></thead><tbody>';
   ASSET_DEFS.forEach(d=>{
-    html += '<tr><td style="position:sticky;left:0;background:var(--card);font-weight:600;">'+d.name+'</td>';
-    alloc.forEach((a,i)=>{
-      html += '<td style="text-align:right;"><input type="number" style="text-align:right;width:90px;" value="'+(a[d.key]||0)+'" data-col="'+i+'" data-key="'+d.key+'"></td>';
+    html += '<tr><td style="'+sticky+'font-weight:600;">'+d.name+'</td>';
+    cols.forEach(c=>{
+      html += c.ref ? '<td style="text-align:right;'+refBg+'color:var(--muted);">'+fmtAmt(c.a[d.key]||0)+'</td>'
+        : '<td style="text-align:right;"><input type="number" style="text-align:right;width:90px;" value="'+(c.a[d.key]||0)+'" data-id="'+esc(c.a.id)+'" data-key="'+d.key+'"></td>';
     });
     html += '</tr>';
   });
-  html += '<tr style="font-weight:700;"><td style="position:sticky;left:0;background:var(--card);">รวม</td>';
-  alloc.forEach(a=>{ html += '<td style="text-align:right;">฿'+fmtAmt(a.total)+'</td>'; });
+  html += '<tr style="font-weight:700;"><td style="'+sticky+'">รวม</td>';
+  cols.forEach(c=>{ html += '<td style="text-align:right;'+(c.ref?refBg:'')+'">฿'+fmtAmt(c.a.total)+'</td>'; });
   html += '</tr>';
-  html += '<tr><td style="position:sticky;left:0;background:var(--card);color:var(--muted);font-size:11px;">เปลี่ยนแปลง</td>';
-  alloc.forEach((a,i)=>{
-    if(i===0){ html += '<td></td>'; return; }
-    const prev = alloc[i-1];
-    const diff = a.total - prev.total;
-    const pct = prev.total ? (diff/prev.total*100) : 0;
-    const cls = diff<0 ? 'expense' : 'income';
-    html += '<td style="text-align:right;font-size:11px;" class="tx-amt '+cls+'">'+(diff>=0?'+':'')+fmtAmt(diff)+' ('+(pct>=0?'+':'')+pct.toFixed(1)+'%)</td>';
+  html += '<tr><td style="'+sticky+'font-size:11px;">เงินนอกเข้า/ออก (+/−)</td>';
+  cols.forEach((c,i)=>{
+    if(i===0){ html += '<td'+(c.ref?' style="'+refBg+'"':'')+'></td>'; return; }
+    html += c.ref ? '<td style="text-align:right;font-size:11px;'+refBg+'color:var(--muted);">'+(c.a.external?signedNum(c.a.external):'')+'</td>'
+      : '<td style="text-align:right;"><input type="number" style="text-align:right;width:90px;" value="'+(c.a.external||0)+'" data-id="'+esc(c.a.id)+'" data-key="external" title="เงินนอกที่เข้า(+)/ออก(−) ระหว่างเดือนก่อนหน้าถึงเดือนนี้"></td>';
+  });
+  html += '</tr>';
+  html += '<tr><td style="'+sticky+'color:var(--muted);font-size:11px;">เปลี่ยนแปลง (ไม่รวมเงินนอก)</td>';
+  cols.forEach((c,i)=>{
+    if(i===0){ html += '<td'+(c.ref?' style="'+refBg+'"':'')+'></td>'; return; }
+    const prev = cols[i-1].a, a = c.a;
+    const diff = a.total - prev.total, real = diff - Number(a.external||0);
+    const pct = prev.total ? (real/prev.total*100) : 0;
+    const cls = real<0 ? 'expense' : 'income';
+    html += '<td style="text-align:right;font-size:11px;'+(c.ref?refBg:'')+'" class="tx-amt '+cls+'">'+signedNum(real)+' ('+(pct>=0?'+':'')+pct.toFixed(1)+'%)'+
+      (a.external ? '<br><span style="color:var(--muted);font-weight:400;">ก่อนหักเงินนอก '+signedNum(diff)+'</span>' : '')+'</td>';
   });
   html += '</tr></tbody></table>';
   wrap.innerHTML = html;
 
-  wrap.querySelectorAll('input[data-col]').forEach(inp=>{
+  wrap.querySelectorAll('input[data-id]').forEach(inp=>{
     inp.addEventListener('change', async ()=>{
-      const a = alloc[Number(inp.dataset.col)];
-      a[inp.dataset.key] = parseFloat(inp.value)||0;
-      recomputeTotal(a);
-      const {error} = await sb.from('app_portfolio_allocations').update({[inp.dataset.key]: a[inp.dataset.key], total: a.total}).eq('id', a.id);
-      if(error) showError('update allocation: '+error.message);
+      const a = alloc.find(x=>x.id===inp.dataset.id);
+      if(!a) return;
+      if(guardLocked(a._ym)){ renderAllocHistoryTable(); return; }
+      const key = inp.dataset.key;
+      a[key] = parseFloat(inp.value)||0;
+      const patch = {};
+      if(key==='external'){
+        patch.external = a.external;
+      }else{
+        recomputeTotal(a); patch[key] = a[key]; patch.total = a.total;
+      }
+      const {error} = await sb.from('app_portfolio_allocations').update(patch).eq('id', a.id);
+      if(error) showError('update allocation: '+error.message+(key==='external'?' (ถ้ายังไม่ได้รันไฟล์ e1_portfolio_external.sql ใน Supabase ให้รันก่อน)':''));
       renderAllocHistoryTable(); renderPortfolioBars(); renderOverview();
     });
   });
-  wrap.querySelectorAll('.del-btn[data-col]').forEach(btn=>{
+  wrap.querySelectorAll('.del-btn[data-del]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
-      const idx = Number(btn.dataset.col);
-      const removed = alloc[idx];
+      const removed = alloc.find(x=>x.id===btn.dataset.del);
+      if(!removed || guardLocked(removed._ym)) return;
+      if(!confirm('ลบคอลัมน์ '+monthLabel(removed._ym)+' ?')) return;
       const {error} = await sb.from('app_portfolio_allocations').delete().eq('id', removed.id);
       if(error){ showError('delete allocation: '+error.message); return; }
-      alloc.splice(idx,1);
+      alloc.splice(alloc.indexOf(removed),1);
       renderAllocHistoryTable(); renderPortfolioBars(); renderOverview();
     });
   });
 }
 
-document.getElementById('addColBtn').addEventListener('click', async ()=>{
-  const labelInput = document.getElementById('newColLabel');
-  const label = labelInput.value.trim() || ('คอลัมน์ '+(alloc.length+1));
-  const last = alloc[alloc.length-1];
-  const copy = last ? Object.assign({}, last) : {thai_stock:0,mega_stock:0,forex:0,crypto:0,cash:0,total:0};
+async function insertAllocMonth(ym){
+  const prior = alloc.filter(a=>a._ym<=ym);
+  const src = prior.length ? prior[prior.length-1] : (alloc[alloc.length-1] || {thai_stock:0,mega_stock:0,forex:0,crypto:0,cash:0});
   const id = 'alloc-col-'+Date.now();
-  const entry = {id, month:id, label, thai_stock:copy.thai_stock, mega_stock:copy.mega_stock, forex:copy.forex, crypto:copy.crypto, cash:copy.cash, total:copy.total};
-  const {error} = await sb.from('app_portfolio_allocations').insert({
-    id, sort_order:alloc.length, month:id, label, thai_stock:entry.thai_stock, mega_stock:entry.mega_stock,
-    forex:entry.forex, crypto:entry.crypto, cash:entry.cash, total:entry.total
-  });
-  if(error){ showError('insert allocation: '+error.message); return; }
-  alloc.push(entry);
-  labelInput.value='';
-  renderAllocHistoryTable(); renderPortfolioBars(); renderOverview();
+  const entry = {id, month:ym, label:null, note:null, shortLabel:null, thai_stock:src.thai_stock, mega_stock:src.mega_stock, forex:src.forex, crypto:src.crypto, cash:src.cash, external:0};
+  recomputeTotal(entry);
+  const row = {id, sort_order:alloc.reduce((m,a)=>Math.max(m,0),0)+300+alloc.length, month:ym, thai_stock:entry.thai_stock, mega_stock:entry.mega_stock, forex:entry.forex, crypto:entry.crypto, cash:entry.cash, total:entry.total};
+  const {error} = await sb.from('app_portfolio_allocations').insert(row);
+  if(error){ showError('insert allocation: '+error.message); return false; }
+  entry._ym = ym;
+  alloc.push(entry); normalizeAlloc();
+  return true;
+}
+document.getElementById('addColBtn').addEventListener('click', async ()=>{
+  const y = Number(selectedPfYear);
+  if(guardLocked(y)) return;
+  const inY = alloc.filter(a=>Number(a._ym.slice(0,4))===y);
+  let ym;
+  if(!inY.length) ym = y+'-01';
+  else{
+    const last = inY[inY.length-1]._ym;
+    const mo = Number(last.slice(5,7));
+    if(mo>=12){ showError('ปี '+y+' มีครบถึง ธ.ค. แล้ว — ใช้ "+ เพิ่มปี" เพื่อเริ่มปีถัดไป'); return; }
+    ym = y+'-'+pad2(mo+1);
+  }
+  if(await insertAllocMonth(ym)){ renderPortfolioTab(); renderOverview(); }
+});
+document.getElementById('pfAddYearBtn').addEventListener('click', async ()=>{
+  const v = prompt('เพิ่มปีอะไร? (ค.ศ. เช่น 2027)', String(Math.max(...pfYears())+1));
+  if(v===null) return;
+  const y = Number(String(v).trim());
+  if(!(y>=2000 && y<=2100)){ showError('ปีไม่ถูกต้อง'); return; }
+  pfExtraYears.add(y);
+  if(!alloc.some(a=>Number(a._ym.slice(0,4))===y)){
+    if(guardLocked(y)) return;
+    if(!(await insertAllocMonth(y+'-01'))) return;
+  }
+  selectedPfYear = y;
+  renderPortfolioTab(); renderOverview();
 });
 
 let allocEquityChart = null;
@@ -1649,6 +1840,7 @@ function renderPortfolioBars(){
   const canvas = document.getElementById('allocEquityChart');
   if(allocEquityChart) allocEquityChart.destroy();
   if(typeof Chart === 'undefined') return;
+  const ext = alloc.map(a=>Number(a.external||0)!==0);
   allocEquityChart = new Chart(canvas, {
     type: 'line',
     data: {
@@ -1657,14 +1849,17 @@ function renderPortfolioBars(){
         label: 'พอร์ตรวม',
         data: alloc.map(a=>a.total),
         borderColor: '#2E90FA', backgroundColor: 'rgba(46,144,250,.08)',
-        fill: true, tension: 0.25, pointRadius: 3, pointBackgroundColor: '#2E90FA'
+        fill: true, tension: 0.25,
+        pointRadius: ext.map(e=>e?6:3),
+        pointBackgroundColor: ext.map(e=>e?'#F79009':'#2E90FA')
       }]
     },
     options: {
       responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{display:false}, tooltip:{ callbacks:{
         title:(items)=>periodLabel(alloc[items[0].dataIndex]),
-        label:(ctx)=>'฿'+fmtAmt(ctx.parsed.y)
+        label:(ctx)=>'฿'+fmtAmt(ctx.parsed.y),
+        footer:(items)=>{ const a = alloc[items[0].dataIndex]; return a.external ? '💰 เงินนอก '+signedNum(a.external)+' (ไม่ใช่ผลการลงทุน)' : ''; }
       }}},
       scales:{
         y:{ beginAtZero:true, ticks:{ callback:(v)=>'฿'+fmtAmt(v) } },
@@ -1696,14 +1891,6 @@ function renderPortfolioTab(){
       renderPortfolioTab(); renderOverview();
     });
   });
-
-  const expenseTx = txns.filter(t=>t.type==='จ่าย');
-  const catTotals = CATS.map(c=>({cat:c, amt: expenseTx.filter(t=>t.category===c).reduce((s,t)=>s+Number(t.amount),0)}));
-  const maxCat = Math.max(1, ...catTotals.map(c=>c.amt));
-  document.getElementById('insCatBars').innerHTML = catTotals.map(c=>{
-    const pct = Math.round((c.amt/maxCat)*100);
-    return '<div class="cat-row"><div class="cat-name">'+c.cat+'</div><div class="cat-bar-track"><div class="cat-bar-fill" style="width:'+pct+'%"></div></div><div class="cat-amt">฿'+fmtAmt(c.amt)+'</div></div>';
-  }).join('');
 }
 
 /* ---------- AUTH ---------- */
