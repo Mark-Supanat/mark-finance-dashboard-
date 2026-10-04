@@ -257,7 +257,7 @@
           <div class="bars" id="cashflowBars"></div>
         </div>
         <div class="card">
-          <h3>Reserve Summary</h3>
+          <h3>Reserve <span class="sub">เติม/ใช้ แล้วจดว่าเป็นบัญชีไหน</span></h3>
           <div id="reserveSummary"></div>
         </div>
       </div>
@@ -427,10 +427,6 @@
         <h3>แนวโน้มพอร์ตรวม (Equity Curve) <span class="sub">2024 – ปัจจุบัน</span></h3>
         <div style="position:relative;height:220px;"><canvas id="allocEquityChart"></canvas></div>
         <div style="font-size:11px;color:var(--muted);margin-top:8px;">🟠 จุดสีส้ม = เดือนที่มีเงินนอกเข้า/ออก (กราฟขึ้น/ลงตรงนั้นไม่ใช่กำไร/ขาดทุนทั้งหมด)</div>
-      </div>
-      <div class="card">
-        <h3>Reserve Management</h3>
-        <div id="reserveManage"></div>
       </div>
     </div>
 
@@ -677,6 +673,7 @@ async function init(){
   }
 
   await loadArchives();
+  await loadReserveLog();
   activeMonth = todayISO().slice(0,7);
   selectedYear = Number(todayISO().slice(0,4));
   selectedPfYear = selectedYear;
@@ -706,6 +703,75 @@ document.getElementById('yearSelector').addEventListener('change', (e)=>{
   activeMonth = (selectedYear===Number(cur.slice(0,4))) ? cur : selectedYear+'-01';
   renderActionTab();
 });
+
+
+/* ---------- RESERVE (หน้า Overview) ---------- */
+let reserveLog = [], reserveLogReady = false, reserveForm = null;   // reserveForm = {id, dir}
+async function loadReserveLog(){
+  try{
+    const rows = await fetchAll('app_reserve_log','created_at');
+    reserveLog = rows.map(r=>({id:r.id, reserveId:r.reserve_id, dir:r.dir, amount:Number(r.amount), account:r.account, note:r.note, at:r.created_at}))
+      .sort((x,y)=>String(y.at).localeCompare(String(x.at)));
+    reserveLogReady = true;
+  }catch(e){ console.warn('app_reserve_log:', e); reserveLog = []; reserveLogReady = false; }
+}
+function renderReserveCards(){
+  const el = document.getElementById('reserveSummary');
+  if(!el) return;
+  const accOpts = '<option value="">ไม่ระบุ</option>' + accounts.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>').join('');
+  el.innerHTML = (reserveLogReady ? '' : '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:12px;margin-bottom:10px;">ยังเติม/ใช้ Reserve ไม่ได้ — ยังไม่ได้รันไฟล์ SQL <b>e2_reserve_log.sql</b> ใน Supabase</div>') +
+  reserves.map(r=>{
+    const pct = r.initial ? Math.round((r.current/r.initial)*100) : 0;
+    const open = reserveForm && reserveForm.id===r.id;
+    const logs = reserveLog.filter(l=>l.reserveId===r.id).slice(0,8);
+    return '<div class="reserve-card" data-rc="'+esc(r.id)+'">' +
+      '<div class="reserve-top"><span class="reserve-name">'+esc(r.name)+'</span><span class="reserve-count">'+(r.maxTopups?(r.maxTopups-r.used)+'/'+r.maxTopups+' ครั้ง':'')+'</span></div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">฿'+fmtAmt(r.current)+' / ฿'+fmtAmt(r.initial)+'</div>' +
+      '<div class="reserve-track"><div class="reserve-fill" style="width:'+Math.min(100,Math.max(0,pct))+'%"></div></div>' +
+      '<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">' +
+        '<button type="button" class="small-btn" data-rbtn="add" data-r="'+esc(r.id)+'"'+(reserveLogReady?'':' disabled')+'>+ เติม</button>' +
+        '<button type="button" class="small-btn" data-rbtn="use" data-r="'+esc(r.id)+'"'+(reserveLogReady?'':' disabled')+'>− ใช้</button></div>' +
+      (open ? '<div class="form-row" style="margin-top:10px;align-items:flex-end;">' +
+        '<div><label class="field-label">จำนวน (฿)</label><input type="number" min="0" step="any" id="rfAmt"></div>' +
+        '<div><label class="field-label">'+(reserveForm.dir==='add'?'เติมจากบัญชี':'ใช้แล้วเงินไปที่บัญชี')+'</label><select id="rfAcc">'+accOpts+'</select></div>' +
+        '<div><label class="field-label">หมายเหตุ</label><input type="text" id="rfNote" placeholder="เช่น เติมค่าเทรด"></div>' +
+        '<div style="display:flex;gap:6px;"><button type="button" class="small-btn" id="rfSave">บันทึก '+(reserveForm.dir==='add'?'เติม (+)':'ใช้ (−)')+'</button><button type="button" class="small-btn" id="rfCancel">ยกเลิก</button></div></div>' : '') +
+      '<details style="margin-top:10px;"><summary style="font-size:11.5px;color:var(--muted);cursor:pointer;">ประวัติ ('+reserveLog.filter(l=>l.reserveId===r.id).length+') · แก้ยอดตรง ๆ</summary>' +
+        (logs.length ? '<div style="font-size:12px;margin-top:6px;">'+logs.map(l=>'<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px solid var(--border);"><span>'+thDate(l.at)+' · '+(l.account?esc(accName(l.account)):'ไม่ระบุบัญชี')+(l.note?' · '+esc(l.note):'')+'</span><b style="color:'+(l.dir==='add'?'var(--income)':'var(--expense)')+'">'+(l.dir==='add'?'+':'−')+'฿'+fmtAmt(l.amount)+'</b></div>').join('')+'</div>' : '<div class="empty-note" style="margin-top:6px;">ยังไม่มีประวัติ</div>') +
+        '<div style="font-size:12px;color:var(--muted);margin-top:8px;display:flex;align-items:center;gap:6px;">แก้ยอดคงเหลือตรง ๆ ฿<input type="number" step="1" value="'+r.current+'" data-res="'+esc(r.id)+'" class="res-current-input" style="width:100px;padding:5px 7px;"></div>' +
+      '</details></div>';
+  }).join('');
+  el.querySelectorAll('[data-rbtn]').forEach(b=>{
+    b.onclick = ()=>{ reserveForm = {id:b.dataset.r, dir:b.dataset.rbtn}; renderReserveCards(); const i=document.getElementById('rfAmt'); if(i) i.focus(); };
+  });
+  const cancel = document.getElementById('rfCancel'); if(cancel) cancel.onclick = ()=>{ reserveForm=null; renderReserveCards(); };
+  const save = document.getElementById('rfSave'); if(save) save.onclick = saveReserveMove;
+  el.querySelectorAll('.res-current-input').forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const r = reserves.find(x=>x.id===inp.dataset.res);
+      const newCurrent = Math.max(0, parseFloat(inp.value)||0);
+      const {error} = await sb.from('app_reserves').update({current:newCurrent}).eq('id', r.id);
+      if(error){ showError('update reserve: '+error.message); return; }
+      r.current = newCurrent;
+      renderOverview();
+    });
+  });
+}
+async function saveReserveMove(){
+  const f = reserveForm; if(!f) return;
+  const r = reserves.find(x=>x.id===f.id); if(!r) return;
+  const amt = parseFloat(document.getElementById('rfAmt').value);
+  if(!(amt>0)){ showError('ใส่จำนวนเงินมากกว่า 0'); return; }
+  const acc = document.getElementById('rfAcc').value || null;
+  const note = document.getElementById('rfNote').value.trim() || null;
+  if(f.dir==='use' && r.current-amt<0 && !confirm('ยอด '+r.name+' จะติดลบ (฿'+fmtAmt(r.current-amt)+') ทำต่อไหม?')) return;
+  const {error} = await sb.rpc('app_reserve_move', {p_reserve_id:r.id, p_dir:f.dir, p_amount:amt, p_account:acc, p_note:note});
+  if(error){ showError('เติม/ใช้ Reserve ไม่สำเร็จ: '+error.message); return; }
+  reserveForm = null;
+  await loadReserveLog();
+  r.current += (f.dir==='add' ? amt : -amt);
+  renderOverview();
+}
 
 /* ---------- NAV ---------- */
 document.querySelectorAll('.nav-item').forEach(item=>{
@@ -765,14 +831,7 @@ function renderOverview(){
     return '<div class="bar-col"><div class="bar-fill'+(x.net<0?' neg':'')+'" style="height:'+h+'%" title="฿'+fmtAmt(x.net)+'"></div><div class="bar-label">'+THAI_MONTHS[mm-1]+(spanYears?" '"+x.m.slice(2,4):'')+'</div></div>';
   }).join('');
 
-  const resSummary = document.getElementById('reserveSummary');
-  resSummary.innerHTML = reserves.map(r=>{
-    const remaining = r.maxTopups - r.used;
-    const pct = r.initial ? Math.round((r.current/r.initial)*100) : 0;
-    return '<div class="reserve-card"><div class="reserve-top"><span class="reserve-name">'+esc(r.name)+'</span><span class="reserve-count">'+(r.maxTopups?remaining+'/'+r.maxTopups+' ครั้ง':'')+'</span></div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">฿'+fmtAmt(r.current)+' / ฿'+fmtAmt(r.initial)+'</div>' +
-      '<div class="reserve-track"><div class="reserve-fill" style="width:'+pct+'%"></div></div></div>';
-  }).join('');
+  renderReserveCards();
 
   renderAccountsList();
   renderOverviewPortfolioList();
@@ -1872,25 +1931,6 @@ function renderPortfolioBars(){
 function renderPortfolioTab(){
   renderAllocHistoryTable();
   renderPortfolioBars();
-
-  document.getElementById('reserveManage').innerHTML = reserves.map(r=>{
-    const pct = r.initial ? Math.round((r.current/r.initial)*100) : 0;
-    return '<div class="reserve-card">' +
-      '<div class="reserve-top"><span class="reserve-name">'+esc(r.name)+'</span><span class="reserve-count">เริ่มต้น ฿'+fmtAmt(r.initial)+'</span></div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:6px;">คงเหลือปัจจุบัน ฿<input type="number" step="1" value="'+r.current+'" data-res="'+esc(r.id)+'" class="res-current-input" style="width:100px;padding:5px 7px;"></div>' +
-      '<div class="reserve-track"><div class="reserve-fill" style="width:'+Math.min(100,Math.max(0,pct))+'%"></div></div>' +
-      '<div style="font-size:10.5px;color:var(--muted);margin-top:6px;">ปรับได้จากที่นี่โดยตรง หรือให้ระบบปรับให้อัตโนมัติเมื่อบันทึกรายการ "โอนเงิน" ที่ผลต่อ Reserve ในหน้า Action</div></div>';
-  }).join('');
-  document.querySelectorAll('.res-current-input').forEach(inp=>{
-    inp.addEventListener('change', async ()=>{
-      const r = reserves.find(x=>x.id===inp.dataset.res);
-      const newCurrent = Math.max(0, parseFloat(inp.value)||0);
-      const {error} = await sb.from('app_reserves').update({current:newCurrent}).eq('id', r.id);
-      if(error){ showError('update reserve: '+error.message); return; }
-      r.current = newCurrent;
-      renderPortfolioTab(); renderOverview();
-    });
-  });
 }
 
 /* ---------- AUTH ---------- */
