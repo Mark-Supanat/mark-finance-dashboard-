@@ -68,6 +68,34 @@
   .stat-chg.down{background:var(--expense-soft);color:var(--expense);}
 
   .grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:16px;}
+  .grid2.eq{grid-template-columns:1fr 1fr;}
+  .grid2.eq > .card{margin-bottom:0;}
+  .hide-amt .sens{filter:blur(9px);user-select:none;pointer-events:none;}
+  .eye-btn{background:var(--card);border:1px solid var(--border);border-radius:20px;width:34px;height:32px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);padding:0;}
+  .eye-btn:hover{color:var(--text);}
+  .eye-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
+  .eye-btn .eye-off{display:none;}
+  .hide-amt .eye-btn .eye-on{display:none;} .hide-amt .eye-btn .eye-off{display:block;}
+  .bars-wrap{position:relative;}
+  .bars.tall{height:190px;}
+  .bar-col{cursor:pointer;border-radius:6px;}
+  .bar-col:hover{background:var(--bg);}
+  .bar-col.sel{background:var(--bg);}
+  #cfTip{position:absolute;z-index:20;background:#101828;color:#fff;border-radius:8px;padding:7px 10px;font-size:11.5px;line-height:1.55;pointer-events:none;white-space:nowrap;display:none;transform:translateX(-50%);box-shadow:0 6px 18px rgba(16,24,40,.25);}
+  .acc-list.vert{grid-template-columns:1fr;gap:10px;}
+  .acc-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;}
+  .acc-row .acc-top{margin-bottom:0;}
+  .acc-row .acc-bal{margin:0;font-size:18px;display:flex;align-items:center;gap:2px;flex-shrink:0;}
+  .acc-row .acc-bal input{text-align:right;width:110px;}
+  .acc-row .alloc-wrap{display:block;margin-top:4px;}
+  #reserveSummary{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;}
+  #reserveSummary .reserve-card{margin-bottom:0;}
+  #reserveSummary > .notice{grid-column:1/-1;}
+  .hold-grp{border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
+  .hold-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .hold-row:last-of-type{border-bottom:none;}
+  .hold-row .sym{flex:1;font-weight:600;}
+  .hold-row input{width:110px;text-align:right;padding:5px 7px;}
   .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;}
   .card h3{font-size:14.5px;font-weight:700;margin:0 0 14px;display:flex;justify-content:space-between;align-items:center;}
   .card h3 .sub{font-size:11.5px;color:var(--muted);font-weight:500;}
@@ -182,7 +210,8 @@
     .main{margin-left:0;padding:16px 14px 70px;}
     .menu-toggle{display:flex;}
     .stat-grid{grid-template-columns:repeat(2,1fr);}
-    .grid2{grid-template-columns:1fr;}
+    .grid2,.grid2.eq{grid-template-columns:1fr;}
+    .grid2.eq > .card{margin-bottom:16px;}
     .acc-list{grid-template-columns:1fr;}
     .asset-grid{grid-template-columns:1fr;}
   }
@@ -244,27 +273,28 @@
         <div class="menu-toggle" id="menuToggle"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></div>
         <div class="welcome"><h1 id="welcomeTitle">ยินดีต้อนรับกลับ, Mark 👋</h1><p>ภาพรวมการเงินของคุณวันนี้</p></div>
       </div>
-      <div class="date-chip" id="todayChip"></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button type="button" class="eye-btn" id="eyeBtn" title="ซ่อน/แสดงตัวเลข" aria-label="ซ่อน/แสดงตัวเลข">
+          <svg class="eye-on" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A16.6 16.6 0 0 0 2 12s3.6 7 10 7c1.7 0 3.2-.4 4.5-1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+        </button>
+        <div class="date-chip" id="todayChip"></div>
+      </div>
     </header>
 
     <!-- OVERVIEW -->
     <div class="view active" id="view-overview">
       <div class="stat-grid" id="statGrid"></div>
 
-      <div class="grid2">
+      <div class="grid2 eq">
         <div class="card">
-          <h3>Overview <span class="sub">กระแสเงินสด (สุทธิ) 12 เดือนล่าสุด</span></h3>
-          <div class="bars" id="cashflowBars"></div>
+          <h3>Overview <span class="sub">กระแสเงินสด (สุทธิ) · ชี้หรือแตะแท่งเพื่อดูยอด</span></h3>
+          <div class="bars-wrap"><div class="bars tall" id="cashflowBars"></div><div id="cfTip"></div></div>
         </div>
         <div class="card">
-          <h3>Reserve <span class="sub">เติม/ใช้ แล้วจดว่าเป็นบัญชีไหน</span></h3>
-          <div id="reserveSummary"></div>
+          <h3>My Accounts <span class="sub">แตะที่ยอดเงินเพื่อแก้ไข</span></h3>
+          <div class="acc-list vert" id="accList"></div>
         </div>
-      </div>
-
-      <div class="card">
-        <h3>My Accounts <span class="sub">แตะที่ยอดเงินเพื่อแก้ไข</span></h3>
-        <div class="acc-list" id="accList"></div>
       </div>
 
       <div class="card">
@@ -274,12 +304,18 @@
             <canvas id="portfolioDonut"></canvas>
             <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;">
               <span style="font-size:10px;color:var(--muted);">รวม</span>
-              <span id="portfolioDonutTotal" style="font-size:14px;font-weight:700;"></span>
+              <span id="portfolioDonutTotal" class="sens" style="font-size:14px;font-weight:700;"></span>
             </div>
           </div>
           <div id="portfolioDonutLegend" style="flex:1;min-width:150px;display:flex;flex-direction:column;gap:7px;font-size:12.5px;"></div>
         </div>
         <div class="acc-list" id="overviewPortfolioList"></div>
+        <div id="holdingsBox" style="margin-top:20px;"></div>
+      </div>
+
+      <div class="card">
+        <h3>Reserve <span class="sub">เติม/ใช้ แล้วจดว่าเป็นบัญชีไหน</span></h3>
+        <div id="reserveSummary"></div>
       </div>
     </div>
 
@@ -460,7 +496,8 @@ const SEED_RES = [
 
 let pfExtReady=true, selectedPfYear=null;
 let txns=[], ptxns=[], alloc=[], accounts=[], reserves=[], transfers=[];
-let currentPortfolio = {thai_stock:0, mega_stock:0, forex:0, crypto:0, cash:0, total:0};
+let tfexReady = true;
+let currentPortfolio = {thai_stock:0, tfex:0, mega_stock:0, forex:0, crypto:0, cash:0, total:0};
 let activeMonth = null;
 let selectedType = 'จ่าย';
 
@@ -549,10 +586,11 @@ async function loadAllData(){
 
   alloc = allocRows.map(r=>({
     id:r.id, month:r.month, label:r.label, note:r.note, shortLabel:r.short_label,
-    thai_stock:Number(r.thai_stock), mega_stock:Number(r.mega_stock), forex:Number(r.forex),
+    thai_stock:Number(r.thai_stock), tfex:Number(r.tfex||0), mega_stock:Number(r.mega_stock), forex:Number(r.forex),
     crypto:Number(r.crypto), cash:Number(r.cash), total:Number(r.total), external:Number(r.external||0)
   }));
   pfExtReady = allocRows.length===0 || ('external' in allocRows[0]);
+  if(allocRows.length) tfexReady = tfexReady && ('tfex' in allocRows[0]);
   if(alloc.length===0){
     for(let i=0;i<SEED_AL.length;i++){
       const a = SEED_AL[i];
@@ -573,7 +611,8 @@ async function loadAllData(){
     currentPortfolio = seedCur;
   }else{
     const r = curRows[0];
-    currentPortfolio = {thai_stock:Number(r.thai_stock), mega_stock:Number(r.mega_stock), forex:Number(r.forex), crypto:Number(r.crypto), cash:Number(r.cash), total:0};
+    currentPortfolio = {thai_stock:Number(r.thai_stock), tfex:Number(r.tfex||0), mega_stock:Number(r.mega_stock), forex:Number(r.forex), crypto:Number(r.crypto), cash:Number(r.cash), total:0};
+    tfexReady = ('tfex' in r);
     currentPortfolio.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(currentPortfolio[k]||0),0);
   }
 
@@ -674,6 +713,7 @@ async function init(){
 
   await loadArchives();
   await loadReserveLog();
+  await loadHoldings();
   activeMonth = todayISO().slice(0,7);
   selectedYear = Number(todayISO().slice(0,4));
   selectedPfYear = selectedYear;
@@ -719,14 +759,14 @@ function renderReserveCards(){
   const el = document.getElementById('reserveSummary');
   if(!el) return;
   const accOpts = '<option value="">ไม่ระบุ</option>' + accounts.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>').join('');
-  el.innerHTML = (reserveLogReady ? '' : '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:12px;margin-bottom:10px;">ยังเติม/ใช้ Reserve ไม่ได้ — ยังไม่ได้รันไฟล์ SQL <b>e2_reserve_log.sql</b> ใน Supabase</div>') +
+  el.innerHTML = (reserveLogReady ? '' : '<div class="notice" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:12px;margin-bottom:10px;">ยังเติม/ใช้ Reserve ไม่ได้ — ยังไม่ได้รันไฟล์ SQL <b>e2_reserve_log.sql</b> ใน Supabase</div>') +
   reserves.map(r=>{
     const pct = r.initial ? Math.round((r.current/r.initial)*100) : 0;
     const open = reserveForm && reserveForm.id===r.id;
     const logs = reserveLog.filter(l=>l.reserveId===r.id).slice(0,8);
     return '<div class="reserve-card" data-rc="'+esc(r.id)+'">' +
       '<div class="reserve-top"><span class="reserve-name">'+esc(r.name)+'</span><span class="reserve-count">'+(r.maxTopups?(r.maxTopups-r.used)+'/'+r.maxTopups+' ครั้ง':'')+'</span></div>' +
-      '<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">฿'+fmtAmt(r.current)+' / ฿'+fmtAmt(r.initial)+'</div>' +
+      '<div class="sens" style="font-size:12px;color:var(--muted);margin-bottom:6px;">฿'+fmtAmt(r.current)+' / ฿'+fmtAmt(r.initial)+'</div>' +
       '<div class="reserve-track"><div class="reserve-fill" style="width:'+Math.min(100,Math.max(0,pct))+'%"></div></div>' +
       '<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">' +
         '<button type="button" class="small-btn" data-rbtn="add" data-r="'+esc(r.id)+'"'+(reserveLogReady?'':' disabled')+'>+ เติม</button>' +
@@ -773,6 +813,93 @@ async function saveReserveMove(){
   renderOverview();
 }
 
+
+/* ---------- HOLDINGS (ถือหุ้นตัวไหนอยู่) ---------- */
+const HOLD_GROUPS = [
+  {g:'SET', name:'หุ้นไทย (SET)', key:'thai_stock'},
+  {g:'TFEX', name:'TFEX', key:'tfex'},
+  {g:'US Stock', name:'US Stock', key:'mega_stock'},
+  {g:'Crypto', name:'คริปโต', key:'crypto'}
+];
+let holdings = [], holdingsReady = false;
+async function loadHoldings(){
+  try{
+    const rows = await fetchAll('app_holdings','created_at');
+    holdings = rows.map(r=>({id:r.id, grp:r.grp, symbol:r.symbol, amount:Number(r.amount), note:r.note}));
+    holdingsReady = true;
+  }catch(e){ console.warn('app_holdings:', e); holdings = []; holdingsReady = false; }
+}
+function renderHoldings(){
+  const el = document.getElementById('holdingsBox'); if(!el) return;
+  if(!holdingsReady){
+    el.innerHTML = '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:12.5px;">ยังจดรายชื่อหุ้นไม่ได้ — ยังไม่ได้รันไฟล์ SQL <b>g1_tfex_holdings.sql</b> ใน Supabase</div>';
+    return;
+  }
+  const groupsHtml = HOLD_GROUPS.map(G=>{
+    const items = holdings.filter(h=>h.grp===G.g);
+    if(!items.length) return '';
+    const sum = items.reduce((a,h)=>a+h.amount,0);
+    const asset = Number(currentPortfolio[G.key]||0), rest = asset - sum;
+    return '<div class="hold-grp"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;"><b style="font-size:13px;">'+G.name+'</b>' +
+      '<span class="sens" style="font-size:12px;color:var(--muted);">รวม ฿'+fmtAmt(sum)+(rest>0.5?' · ยังไม่ได้ลงรายตัว ฿'+fmtAmt(rest):(rest<-0.5?' · เกินยอดพอร์ต ฿'+fmtAmt(-rest):''))+'</span></div>' +
+      items.map(h=>'<div class="hold-row"><span class="sym">'+esc(h.symbol)+(h.note?' <span style="font-weight:400;color:var(--muted);font-size:11px;">'+esc(h.note)+'</span>':'')+'</span>' +
+        '<span class="sens">฿<input type="number" step="any" value="'+h.amount+'" data-hold="'+esc(h.id)+'" class="hold-amt"></span>' +
+        '<button class="del-btn" data-hdel="'+esc(h.id)+'" title="ลบ">×</button></div>').join('') + '</div>';
+  }).join('');
+  el.innerHTML = '<h3 style="margin:0 0 4px;font-size:13.5px;">ถืออะไรอยู่ <span class="sub" style="font-weight:500;">จดเองเพื่อดูภาพรวม — ไม่ไปเปลี่ยนยอดพอร์ตด้านบน</span></h3>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:10px;">' + (groupsHtml || '<div class="empty-note">ยังไม่ได้จดรายตัว — เพิ่มด้านล่าง</div>') + '</div>' +
+    '<div class="form-row" style="margin-top:12px;align-items:flex-end;">' +
+      '<div><label class="field-label">ชื่อหุ้น / สัญลักษณ์</label><input type="text" id="hdSym" placeholder="เช่น PTT, NVDA"></div>' +
+      '<div><label class="field-label">พอร์ต</label><select id="hdGrp">'+HOLD_GROUPS.map(G=>'<option value="'+G.g+'">'+G.name+'</option>').join('')+'</select></div>' +
+      '<div><label class="field-label">มูลค่า (บาท)</label><input type="number" step="any" id="hdAmt" placeholder="0"></div>' +
+      '<div><button type="button" class="submit" id="hdAdd" style="padding:9px 16px;">+ เพิ่ม</button></div></div>';
+  document.getElementById('hdAdd').onclick = async ()=>{
+    const symbol = document.getElementById('hdSym').value.trim().toUpperCase();
+    const grp = document.getElementById('hdGrp').value;
+    const amount = parseFloat(document.getElementById('hdAmt').value)||0;
+    if(!symbol){ showError('ใส่ชื่อหุ้นก่อน'); return; }
+    const row = {id:uid(), grp, symbol, amount};
+    const {error} = await sb.from('app_holdings').insert(row);
+    if(error){ showError('เพิ่มหุ้นไม่สำเร็จ: '+error.message); return; }
+    holdings.push(row); renderHoldings();
+  };
+  el.querySelectorAll('.hold-amt').forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const h = holdings.find(x=>x.id===inp.dataset.hold); if(!h) return;
+      const v = parseFloat(inp.value)||0;
+      const {error} = await sb.from('app_holdings').update({amount:v}).eq('id', h.id);
+      if(error){ showError('แก้ไม่สำเร็จ: '+error.message); return; }
+      h.amount = v; renderHoldings();
+    });
+  });
+  el.querySelectorAll('[data-hdel]').forEach(b=>{
+    b.onclick = async ()=>{
+      const h = holdings.find(x=>x.id===b.dataset.hdel); if(!h) return;
+      if(!confirm('ลบ '+h.symbol+' ออกจากรายการ?')) return;
+      const {error} = await sb.from('app_holdings').delete().eq('id', h.id);
+      if(error){ showError('ลบไม่สำเร็จ: '+error.message); return; }
+      holdings = holdings.filter(x=>x.id!==h.id); renderHoldings();
+    };
+  });
+}
+
+/* ---------- ซ่อน/แสดงตัวเลข (จำค่าล่าสุดในเบราว์เซอร์นี้) ---------- */
+function applyHideAmt(hide){
+  document.body.classList.toggle('hide-amt', hide);
+  const b = document.getElementById('eyeBtn'); if(b) b.title = hide ? 'แสดงตัวเลข' : 'ซ่อนตัวเลข';
+  hideCfTip();
+}
+(function(){
+  let hide = false;
+  try{ hide = localStorage.getItem('hideAmounts')==='1'; }catch(e){}
+  applyHideAmt(hide);
+  document.getElementById('eyeBtn').addEventListener('click', ()=>{
+    const now = !document.body.classList.contains('hide-amt');
+    applyHideAmt(now);
+    try{ localStorage.setItem('hideAmounts', now?'1':'0'); }catch(e){}
+  });
+})();
+
 /* ---------- NAV ---------- */
 document.querySelectorAll('.nav-item').forEach(item=>{
   item.addEventListener('click', ()=>{
@@ -793,6 +920,25 @@ document.getElementById('menuToggle').addEventListener('click', ()=>{
 function accountsTotal(){ return accounts.reduce((s,a)=>s+Number(a.balance||0),0); }
 function portfolioTotal(){ return currentPortfolio.total; }
 
+let cashflowData = [];
+function showCfTip(col){
+  const x = cashflowData.find(d=>d.m===col.dataset.m); if(!x) return;
+  const tip = document.getElementById('cfTip'), wrap = tip.parentNode;
+  document.querySelectorAll('#cashflowBars .bar-col').forEach(c=>c.classList.toggle('sel', c===col));
+  const hide = document.body.classList.contains('hide-amt');
+  const mm = Number(x.m.split('-')[1]);
+  const v = n=> hide ? '••••' : '฿'+fmtAmt(Math.abs(n));
+  tip.innerHTML = '<b>'+THAI_MONTHS[mm-1]+' '+x.m.slice(0,4)+'</b><br>สุทธิ '+(hide?'':(x.net<0?'−':'+'))+v(x.net)+'<br><span style="opacity:.8">รับ '+v(x.inc)+' · จ่าย '+v(x.exp)+'</span>';
+  tip.style.display = 'block';
+  const wr = wrap.getBoundingClientRect(), cr = col.getBoundingClientRect();
+  let left = cr.left - wr.left + cr.width/2;
+  left = Math.max(tip.offsetWidth/2, Math.min(wr.width - tip.offsetWidth/2, left));
+  tip.style.left = left+'px'; tip.style.top = Math.max(0, (cr.top - wr.top) - tip.offsetHeight - 6)+'px';
+}
+function hideCfTip(){
+  const tip = document.getElementById('cfTip'); if(tip) tip.style.display='none';
+  document.querySelectorAll('#cashflowBars .bar-col').forEach(c=>c.classList.remove('sel'));
+}
 function renderOverview(){
   const cur = todayISO().slice(0,7);
   const monthTx = txns.filter(t=>monthKey(t.date)===cur);
@@ -801,8 +947,8 @@ function renderOverview(){
   const netWorth = accountsTotal() + portfolioTotal();
 
   const stats = [
-    {k:'Total Net Worth', v:netWorth, icon:'◆', color:'blue', chg:null},
-    {k:'เงินสดในบัญชี', v:accountsTotal(), icon:'🏦', color:'purple', chg:null},
+    {k:'Total Net Worth', v:netWorth, icon:'◆', color:'blue', chg:null, sens:true},
+    {k:'เงินสดในบัญชี', v:accountsTotal(), icon:'🏦', color:'purple', chg:null, sens:true},
     {k:'รายรับเดือนนี้', v:income, icon:'↓', color:'teal', chg:null, forceUp:true},
     {k:'รายจ่ายเดือนนี้', v:expense, icon:'↑', color:'rose', chg:null, forceDown:true},
   ];
@@ -812,7 +958,7 @@ function renderOverview(){
       chgHtml = '<span class="stat-chg '+(s.chg>=0?'up':'down')+'">'+(s.chg>=0?'▲':'▼')+' '+Math.abs(s.chg).toFixed(1)+'%</span>';
     }
     return '<div class="stat-card"><div class="stat-top"><div class="stat-icon" style="background:var(--'+s.color+'-soft);color:var(--'+s.color+')">'+s.icon+'</div>'+chgHtml+'</div>'+
-      '<div class="stat-k">'+s.k+'</div><div class="stat-v">฿'+fmtAmt(s.v)+'</div></div>';
+      '<div class="stat-k">'+s.k+'</div><div class="stat-v'+(s.sens?' sens':'')+'">฿'+fmtAmt(s.v)+'</div></div>';
   }).join('');
 
   const bars = document.getElementById('cashflowBars');
@@ -822,14 +968,20 @@ function renderOverview(){
     const mt = txns.filter(t=>monthKey(t.date)===m);
     const inc = mt.filter(t=>t.type==='รับ').reduce((s,t)=>s+Number(t.amount),0);
     const exp = mt.filter(t=>t.type==='จ่าย').reduce((s,t)=>s+Number(t.amount),0);
-    return {m, net:inc-exp};
+    return {m, net:inc-exp, inc, exp};
   });
   const maxAbs = Math.max(1, ...netByMonth.map(x=>Math.abs(x.net)));
   bars.innerHTML = netByMonth.map(x=>{
     const h = Math.max(3, Math.round((Math.abs(x.net)/maxAbs)*100));
     const mm = Number(x.m.split('-')[1]);
-    return '<div class="bar-col"><div class="bar-fill'+(x.net<0?' neg':'')+'" style="height:'+h+'%" title="฿'+fmtAmt(x.net)+'"></div><div class="bar-label">'+THAI_MONTHS[mm-1]+(spanYears?" '"+x.m.slice(2,4):'')+'</div></div>';
-  }).join('');
+    return '<div class="bar-col" data-m="'+x.m+'"><div class="bar-fill'+(x.net<0?' neg':'')+'" style="height:'+h+'%"></div><div class="bar-label">'+THAI_MONTHS[mm-1]+(spanYears?" '"+x.m.slice(2,4):'')+'</div></div>';
+  }).join('') || '<div class="empty-note" style="width:100%;text-align:center;align-self:center;">ยังไม่มีรายการ</div>';
+  cashflowData = netByMonth;
+  bars.querySelectorAll('.bar-col').forEach(c=>{
+    c.addEventListener('mouseenter', ()=>showCfTip(c));
+    c.addEventListener('mouseleave', ()=>hideCfTip());
+    c.addEventListener('click', ()=>{ if(c.classList.contains('sel')) hideCfTip(); else showCfTip(c); });
+  });
 
   renderReserveCards();
 
@@ -839,11 +991,11 @@ function renderOverview(){
 
 function renderAccountsList(){
   document.getElementById('accList').innerHTML = accounts.map(a=>{
-    const allocHtml = (a.allocations||[]).map(al=>'<span class="alloc-tag">'+esc(al.label)+': ฿'+fmtAmt(al.amount)+'</span>').join('');
-    return '<div class="acc-card"><div class="acc-top"><div class="acc-icon" style="background:var(--'+esc(a.color)+')">'+esc(a.name.slice(0,2).toUpperCase())+'</div>' +
+    const allocHtml = (a.allocations||[]).map(al=>'<span class="alloc-tag sens">'+esc(al.label)+': ฿'+fmtAmt(al.amount)+'</span>').join('');
+    return '<div class="acc-card acc-row"><div style="min-width:0;"><div class="acc-top"><div class="acc-icon" style="background:var(--'+esc(a.color)+')">'+esc(a.name.slice(0,2).toUpperCase())+'</div>' +
       '<div><div class="acc-name">'+esc(a.name)+'</div><div class="acc-purpose">'+esc(a.purpose)+'</div></div></div>' +
-      '<div class="acc-bal">฿<input type="number" step="1" value="'+a.balance+'" data-acc="'+esc(a.id)+'" class="acc-bal-input"></div>' +
-      allocHtml + '</div>';
+      (allocHtml?'<div class="alloc-wrap">'+allocHtml+'</div>':'')+'</div>' +
+      '<div class="acc-bal sens">฿<input type="number" step="1" value="'+a.balance+'" data-acc="'+esc(a.id)+'" class="acc-bal-input"></div></div>';
   }).join('');
   document.querySelectorAll('.acc-bal-input').forEach(inp=>{
     inp.addEventListener('change', async ()=>{
@@ -859,26 +1011,27 @@ function renderAccountsList(){
 function renderOverviewPortfolioList(){
   const wrap = document.getElementById('overviewPortfolioList');
   wrap.innerHTML = OVERVIEW_ASSET_DEFS.map(d=>{
-    return '<div class="acc-card"><div class="acc-top"><div class="acc-icon" style="background:var(--'+d.color+')">'+d.name.slice(0,2).toUpperCase()+'</div>' +
+    return '<div class="acc-card"><div class="acc-top"><div class="acc-icon" style="background:var(--'+d.color+')">'+(d.ic||d.name.slice(0,2).toUpperCase())+'</div>' +
       '<div><div class="acc-name">'+d.name+'</div><div class="acc-purpose">ยอดปัจจุบันในพอร์ต</div></div></div>' +
-      '<div class="acc-bal">฿<input type="number" step="1" value="'+(currentPortfolio[d.key]||0)+'" data-asset="'+d.key+'" class="ov-asset-input"></div></div>';
+      '<div class="acc-bal sens">฿<input type="number" step="1" value="'+(currentPortfolio[d.key]||0)+'" data-asset="'+d.key+'" class="ov-asset-input"></div></div>';
   }).join('') +
     '<div class="acc-card" style="opacity:.7;"><div class="acc-top"><div class="acc-icon" style="background:var(--slate)">เง</div>' +
     '<div><div class="acc-name">เงินสด</div><div class="acc-purpose">รวมจาก My Accounts ด้านบนแล้ว</div></div></div>' +
-    '<div class="acc-bal">฿'+fmtAmt(accountsTotal())+'</div></div>';
+    '<div class="acc-bal sens">฿'+fmtAmt(accountsTotal())+'</div></div>';
   wrap.querySelectorAll('.ov-asset-input').forEach(inp=>{
     inp.addEventListener('change', async ()=>{
       currentPortfolio[inp.dataset.asset] = parseFloat(inp.value)||0;
       currentPortfolio.total = OVERVIEW_ASSET_DEFS.reduce((s,d)=>s+Number(currentPortfolio[d.key]||0),0);
       const {error} = await sb.from('app_portfolio_current').update({[inp.dataset.asset]: currentPortfolio[inp.dataset.asset], total: currentPortfolio.total}).eq('id','current');
-      if(error) showError('update portfolio: '+error.message);
+      if(error) showError('update portfolio: '+error.message+(inp.dataset.asset==='tfex'?' (ต้องรันไฟล์ g1_tfex_holdings.sql ใน Supabase ก่อน)':''));
       renderOverview();
     });
   });
   renderPortfolioDonut();
+  renderHoldings();
 }
 
-const ASSET_COLOR_HEX = {thai_stock:'#2E90FA', mega_stock:'#7A5AF8', forex:'#15B79E', crypto:'#F79009', cash:'#667085'};
+const ASSET_COLOR_HEX = {thai_stock:'#2E90FA', tfex:'#F63D68', mega_stock:'#7A5AF8', forex:'#15B79E', crypto:'#F79009', cash:'#667085'};
 let portfolioDonutChart = null;
 function renderPortfolioDonut(){
   const canvas = document.getElementById('portfolioDonut');
@@ -909,10 +1062,10 @@ function renderPortfolioDonut(){
   });
 }
 
-// พอร์ตเทรด: id → ชื่อที่แสดง + ช่องในยอดพอร์ตที่ไปรวม (SET รวมกับ TFEX, US Stock รวมกับหุ้นเมกา+จีน)
+// พอร์ตเทรด: id → ชื่อที่แสดง + ช่องในยอดพอร์ตที่ไปรวม (SET → หุ้นไทย, TFEX แยกช่องของตัวเอง, US Stock → หุ้นเมกา+จีน)
 const PORT_DEFS = {
   'port-forex': {label:'Forex', key:'forex'},
-  'port-tfex':  {label:'TFEX', key:'thai_stock'},
+  'port-tfex':  {label:'TFEX', key:'tfex'},
   'port-set':   {label:'SET', key:'thai_stock'},
   'port-us':    {label:'US Stock', key:'mega_stock'}
 };
@@ -1196,7 +1349,8 @@ function renderPortfolioAccSummary(){
   const cur = (typeof currentPortfolio==='object' && currentPortfolio) ? currentPortfolio : {};
   const groups = [
     {label:'Forex', accs:['Forex'], now:Number(cur.forex||0)},
-    {label:'TFEX + SET (หุ้นไทย)', accs:['TFEX','S50','MGO','SET'], now:Number(cur.thai_stock||0)},
+    {label:'TFEX', accs:['TFEX','S50','MGO'], now:Number(cur.tfex||0)},
+    {label:'SET (หุ้นไทย)', accs:['SET'], now:Number(cur.thai_stock||0)},
     {label:'US Stock (หุ้นเมกา + จีน)', accs:['US Stock'], now:Number(cur.mega_stock||0)}
   ];
   const signed = (n)=> (n<0?'−':'+')+'฿'+fmtAmt(Math.abs(n));
@@ -1221,7 +1375,7 @@ function renderPortfolioAccSummary(){
     '<td style="text-align:right;color:'+col(tPl)+'">'+signed(tPl)+'</td></tr></tbody></table></div>' +
     '<div style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6;">' +
     'ยอดถอน/ฝากนี้ไม่ได้นับเป็นรายรับ-รายจ่ายของเดือน<br>' +
-    'กำไร/ขาดทุนโดยประมาณ = ถอนออก + มูลค่าพอร์ตตอนนี้ − ฝากเข้า · มูลค่าพอร์ตดึงจากหน้า Overview (TFEX+SET ใช้ค่า "หุ้นไทย + TFEX", US Stock ใช้ค่า "หุ้นเมกา + จีน") ' +
+    'กำไร/ขาดทุนโดยประมาณ = ถอนออก + มูลค่าพอร์ตตอนนี้ − ฝากเข้า · มูลค่าพอร์ตดึงจากหน้า Overview (TFEX / SET / US Stock ใช้ค่าจากช่องของตัวเอง) ' +
     'แม่นเมื่อประวัติฝากครบตั้งแต่ต้น ถ้ามีเงินตั้งต้นก่อนเริ่มบันทึกตัวเลขจะคลาดเคลื่อน</div>';
 }
 
@@ -1270,7 +1424,7 @@ function computeYearSummary(year){
   };
   return {year:y, income, expense, net: income-expense, txCount: tx.length,
     trfCount: transfers.filter(t=>t.date.slice(0,4)===y).length, months, cats,
-    pf:{forex: pfOf(['Forex']), tfex: pfOf(['TFEX','S50','MGO','SET']), us: pfOf(['US Stock'])}};
+    pf:{forex: pfOf(['Forex']), tfex: pfOf(['TFEX','S50','MGO']), set: pfOf(['SET']), us: pfOf(['US Stock'])}};
 }
 function buildYearSnapshot(year){
   const cp = currentPortfolio || {};
@@ -1281,7 +1435,7 @@ function buildYearSnapshot(year){
       accounts: accounts.map(a=>({name:a.name, balance:Number(a.balance)})),
       accountsTotal: accTotal,
       reserves: reserves.map(r=>({name:r.name, initial:Number(r.initial), current:Number(r.current)})),
-      portfolio: {thai_stock:Number(cp.thai_stock||0), mega_stock:Number(cp.mega_stock||0), forex:Number(cp.forex||0), crypto:Number(cp.crypto||0), total:Number(cp.total||0)},
+      portfolio: {thai_stock:Number(cp.thai_stock||0), tfex:Number(cp.tfex||0), mega_stock:Number(cp.mega_stock||0), forex:Number(cp.forex||0), crypto:Number(cp.crypto||0), total:Number(cp.total||0)},
       netWorth: accTotal + Number(cp.total||0)
     }
   };
@@ -1381,7 +1535,7 @@ function renderArchiveDetail(y){
       tbl(['รายการ','จำนวน'],
         bs.accounts.map(x=>R([esc(x.name), '฿'+fmtAmt(x.balance)])).join('') +
         R(['<b>รวมบัญชี</b>','<b>฿'+fmtAmt(bs.accountsTotal)+'</b>']) +
-        R(['หุ้นไทย + TFEX','฿'+fmtAmt(pf.thai_stock)]) + R(['หุ้นเมกา + จีน','฿'+fmtAmt(pf.mega_stock)]) +
+        R(['หุ้นไทย (SET)','฿'+fmtAmt(pf.thai_stock)]) + R(['TFEX','฿'+fmtAmt(pf.tfex||0)]) + R(['หุ้นเมกา + จีน','฿'+fmtAmt(pf.mega_stock)]) +
         R(['Forex','฿'+fmtAmt(pf.forex)]) + R(['คริปโต','฿'+fmtAmt(pf.crypto)]) +
         R(['<b>รวมพอร์ตลงทุน</b>','<b>฿'+fmtAmt(pf.total)+'</b>']) +
         R(['<b>Net Worth</b>','<b>฿'+fmtAmt(bs.netWorth)+'</b>']) +
@@ -1392,7 +1546,7 @@ function renderArchiveDetail(y){
     if(pcols.length){
       html += '<h3 style="margin-top:18px;">ประวัติพอร์ตปี '+esc(y)+' <span class="sub">ยอดต้นเดือน (กรอกเอง)</span></h3>';
       if(pst) html += '<div style="font-size:13px;margin-bottom:10px;">ต้นปี <b>฿'+fmtAmt(pst.first.a.total)+'</b> → '+(pst.closed?'สิ้นปี':'ล่าสุด')+' <b>฿'+fmtAmt(pst.last.a.total)+'</b> · ผลจริง (ไม่รวมเงินนอก) <b style="color:'+colr(pst.real)+'">'+signedNum(pst.real)+' ('+(pst.pct>=0?'+':'')+pst.pct.toFixed(1)+'%)</b>'+(pst.ext?' <span style="color:var(--muted)">· เงินนอก '+signedNum(pst.ext)+'</span>':'')+'</div>';
-      html += tbl(['เดือน','หุ้นไทย+TFEX','หุ้นเมกา+จีน','Forex','คริปโต','เงินสด','รวม','เงินนอก'], pcols.map(c=>R([esc(monthLabel(c.a._ym))+(c.ref?' <span style="color:var(--muted);font-size:10px;">('+(c.role==='open'?'ต้นปี':'สิ้นปี')+')</span>':''), fmtAmt(c.a.thai_stock), fmtAmt(c.a.mega_stock), fmtAmt(c.a.forex), fmtAmt(c.a.crypto), fmtAmt(c.a.cash), '<b>'+fmtAmt(c.a.total)+'</b>', c.a.external?signedNum(c.a.external):''])).join(''));
+      html += tbl(['เดือน','หุ้นไทย (SET)','TFEX','หุ้นเมกา+จีน','Forex','คริปโต','เงินสด','รวม','เงินนอก'], pcols.map(c=>R([esc(monthLabel(c.a._ym))+(c.ref?' <span style="color:var(--muted);font-size:10px;">('+(c.role==='open'?'ต้นปี':'สิ้นปี')+')</span>':''), fmtAmt(c.a.thai_stock), fmtAmt(c.a.tfex||0), fmtAmt(c.a.mega_stock), fmtAmt(c.a.forex), fmtAmt(c.a.crypto), fmtAmt(c.a.cash), '<b>'+fmtAmt(c.a.total)+'</b>', c.a.external?signedNum(c.a.external):''])).join(''));
       html += '<div class="no-print" style="margin-top:8px;"><button class="small-btn" id="arcPfOpen">เปิดหน้า Portfolio ของปี '+esc(y)+'</button></div>';
     }
   }
@@ -1402,7 +1556,7 @@ function renderArchiveDetail(y){
   html += '<h3 style="margin-top:18px;">รายจ่ายตามหมวดหมู่</h3>' +
     (st.cats.length ? tbl(['หมวดหมู่','จำนวน'], st.cats.map(c=>R([esc(c.name),'฿'+fmtAmt(c.amount)])).join('')) : '<div class="empty-note">ไม่มีรายจ่าย</div>');
   html += '<h3 style="margin-top:18px;">พอร์ตเทรด <span class="sub">ฝาก/ถอน (ไม่นับเป็นรายรับ-รายจ่าย)</span></h3>' +
-    tbl(['พอร์ต','ถอนออก','ฝากเข้า','สุทธิ (ถอน − ฝาก)'], [['Forex',st.pf.forex],['TFEX + SET',st.pf.tfex],['US Stock',st.pf.us||{out:0,in:0}]].map(([n,v])=>R([n,'฿'+fmtAmt(v.out),'฿'+fmtAmt(v.in),'<span style="color:'+colr(v.out-v.in)+'">'+signedBaht(v.out-v.in)+'</span>'])).join(''));
+    tbl(['พอร์ต','ถอนออก','ฝากเข้า','สุทธิ (ถอน − ฝาก)'], [['Forex',st.pf.forex],['TFEX',st.pf.tfex],['SET',st.pf.set||{out:0,in:0}],['US Stock',st.pf.us||{out:0,in:0}]].map(([n,v])=>R([n,'฿'+fmtAmt(v.out),'฿'+fmtAmt(v.in),'<span style="color:'+colr(v.out-v.in)+'">'+signedBaht(v.out-v.in)+'</span>'])).join(''));
 
   // รายการทั้งหมดของปี (อ่านอย่างเดียว, ดึงจากข้อมูลจริง)
   const yTx = txns.filter(t=>t.date.slice(0,4)===y).sort((p,q)=>p.date.localeCompare(q.date));
@@ -1500,7 +1654,7 @@ function exportYearToExcel(year){
   ys.cats.forEach(c=> aoa5.push([c.name, c.amount]));
   aoa5.push([]);
   aoa5.push(['พอร์ตเทรด','ถอนออก','ฝากเข้า','สุทธิ (ถอน − ฝาก)']);
-  [['Forex', ys.pf.forex], ['TFEX + SET', ys.pf.tfex], ['US Stock', ys.pf.us||{out:0,in:0}]].forEach(([n,v])=> aoa5.push([n, v.out, v.in, v.out-v.in]));
+  [['Forex', ys.pf.forex], ['TFEX', ys.pf.tfex], ['SET', ys.pf.set||{out:0,in:0}], ['US Stock', ys.pf.us||{out:0,in:0}]].forEach(([n,v])=> aoa5.push([n, v.out, v.in, v.out-v.in]));
   const ws5 = XLSX.utils.aoa_to_sheet(aoa5);
 
   const wb = XLSX.utils.book_new();
@@ -1573,7 +1727,8 @@ async function refreshTransferState(){
   reserves = resRows.map(r=>({id:r.id, name:r.name, initial:Number(r.initial), current:Number(r.current), topup:Number(r.topup), maxTopups:Number(r.max_topups), used:Number(r.used)}));
   if(curRows.length){
     const r = curRows[0];
-    currentPortfolio = {thai_stock:Number(r.thai_stock), mega_stock:Number(r.mega_stock), forex:Number(r.forex), crypto:Number(r.crypto), cash:Number(r.cash), total:0};
+    currentPortfolio = {thai_stock:Number(r.thai_stock), tfex:Number(r.tfex||0), mega_stock:Number(r.mega_stock), forex:Number(r.forex), crypto:Number(r.crypto), cash:Number(r.cash), total:0};
+    tfexReady = ('tfex' in r);
     currentPortfolio.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(currentPortfolio[k]||0),0);
   }
   transfers = trfRows.map(r=>({id:r.id, date:r.date, from:r.from_account, to:r.to_account, amount:Number(r.amount), reserveId:r.reserve_id||null, reserveDir:r.reserve_dir||null}));
@@ -1645,10 +1800,11 @@ function renderMonthPanel(key){
 
 /* ---------- PORTFOLIO TAB ---------- */
 const ASSET_DEFS = [
-  {key:'thai_stock', name:'หุ้นไทย + TFEX', color:'blue'},
-  {key:'mega_stock', name:'หุ้นเมกา + จีน', color:'purple'},
-  {key:'forex', name:'Forex', color:'teal'},
-  {key:'crypto', name:'คริปโต', color:'amber'},
+  {key:'thai_stock', name:'หุ้นไทย (SET)', ic:'SET', color:'blue'},
+  {key:'tfex', name:'TFEX', ic:'TF', color:'rose'},
+  {key:'mega_stock', name:'หุ้นเมกา + จีน', ic:'US', color:'purple'},
+  {key:'forex', name:'Forex', ic:'FX', color:'teal'},
+  {key:'crypto', name:'คริปโต', ic:'CR', color:'amber'},
   {key:'cash', name:'เงินสด', color:'slate'}
 ];
 // ใช้เฉพาะสินทรัพย์ที่ลงทุนจริง (ไม่รวมเงินสด เพราะเงินสด = ยอดรวม My Accounts อยู่แล้ว ป้องกันนับซ้ำใน Net Worth)
@@ -1671,6 +1827,7 @@ function normalizeAlloc(){
   let prev = null;
   alloc.forEach(a=>{
     a.external = Number(a.external||0);
+    a.tfex = Number(a.tfex||0);
     let ym = parseAllocYM(a);
     if(!ym){
       if(prev){ let [y,mo]=prev.split('-').map(Number); mo++; if(mo>12){mo=1;y++;} ym = y+'-'+pad2(mo); }
@@ -1761,7 +1918,7 @@ async function importPf2025(){
   for(const r of PF2025){
     const a = {id:'alloc-'+r.m, month:r.m, label:null, note:null, shortLabel:null, thai_stock:r.t, mega_stock:r.u, forex:r.f, crypto:r.c, cash:r.k, external:0};
     recomputeTotal(a);
-    const {error} = await sb.from('app_portfolio_allocations').insert({id:a.id, sort_order:200+i, month:a.month, thai_stock:a.thai_stock, mega_stock:a.mega_stock, forex:a.forex, crypto:a.crypto, cash:a.cash, total:a.total});
+    const {error} = await sb.from('app_portfolio_allocations').insert({id:a.id, sort_order:200+i, month:a.month, ...(tfexReady?{tfex:0}:{}), thai_stock:a.thai_stock, mega_stock:a.mega_stock, forex:a.forex, crypto:a.crypto, cash:a.cash, total:a.total});
     if(error){ showError('นำเข้าปี 2025 ไม่สำเร็จ: '+error.message); return; }
     alloc.push(a); i++;
   }
@@ -1844,7 +2001,7 @@ function renderAllocHistoryTable(){
         recomputeTotal(a); patch[key] = a[key]; patch.total = a.total;
       }
       const {error} = await sb.from('app_portfolio_allocations').update(patch).eq('id', a.id);
-      if(error) showError('update allocation: '+error.message+(key==='external'?' (ถ้ายังไม่ได้รันไฟล์ e1_portfolio_external.sql ใน Supabase ให้รันก่อน)':''));
+      if(error) showError('update allocation: '+error.message+(key==='external'?' (ถ้ายังไม่ได้รันไฟล์ e1_portfolio_external.sql ใน Supabase ให้รันก่อน)':(key==='tfex'?' (ต้องรันไฟล์ g1_tfex_holdings.sql ใน Supabase ก่อน)':'')));
       renderAllocHistoryTable(); renderPortfolioBars(); renderOverview();
     });
   });
@@ -1863,11 +2020,11 @@ function renderAllocHistoryTable(){
 
 async function insertAllocMonth(ym){
   const prior = alloc.filter(a=>a._ym<=ym);
-  const src = prior.length ? prior[prior.length-1] : (alloc[alloc.length-1] || {thai_stock:0,mega_stock:0,forex:0,crypto:0,cash:0});
+  const src = prior.length ? prior[prior.length-1] : (alloc[alloc.length-1] || {thai_stock:0,tfex:0,mega_stock:0,forex:0,crypto:0,cash:0});
   const id = 'alloc-col-'+Date.now();
-  const entry = {id, month:ym, label:null, note:null, shortLabel:null, thai_stock:src.thai_stock, mega_stock:src.mega_stock, forex:src.forex, crypto:src.crypto, cash:src.cash, external:0};
+  const entry = {id, month:ym, label:null, note:null, shortLabel:null, thai_stock:src.thai_stock, tfex:Number(src.tfex||0), mega_stock:src.mega_stock, forex:src.forex, crypto:src.crypto, cash:src.cash, external:0};
   recomputeTotal(entry);
-  const row = {id, sort_order:alloc.reduce((m,a)=>Math.max(m,0),0)+300+alloc.length, month:ym, thai_stock:entry.thai_stock, mega_stock:entry.mega_stock, forex:entry.forex, crypto:entry.crypto, cash:entry.cash, total:entry.total};
+  const row = {id, sort_order:alloc.reduce((m,a)=>Math.max(m,0),0)+300+alloc.length, month:ym, ...(tfexReady?{tfex:entry.tfex}:{}), thai_stock:entry.thai_stock, mega_stock:entry.mega_stock, forex:entry.forex, crypto:entry.crypto, cash:entry.cash, total:entry.total};
   const {error} = await sb.from('app_portfolio_allocations').insert(row);
   if(error){ showError('insert allocation: '+error.message); return false; }
   entry._ym = ym;
