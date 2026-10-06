@@ -134,6 +134,9 @@
   .acc-card{border:1px solid var(--border);border-radius:12px;padding:14px;}
   .acc-top{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
   .acc-icon{width:30px;height:30px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;}
+  .acc-icon.img{background:#fff;border:1px solid var(--border);padding:3px;object-fit:contain;}
+  .acc-icon svg{width:100%;height:100%;display:block;}
+  .acc-icon.btc{background:none;padding:0;}
   .acc-name{font-size:13px;font-weight:700;}
   .acc-purpose{font-size:10.5px;color:var(--muted);}
   .acc-bal{font-size:19px;font-weight:700;margin:6px 0;}
@@ -1107,10 +1110,34 @@ function renderOverview(){
   renderOverviewPortfolioList();
 }
 
+
+/* ---------- โลโก้ (โหลดจากเว็บของแบงก์/ตลาดตอนเปิดหน้า ถ้าโหลดไม่ได้ใช้ตัวอักษรย่อ) ---------- */
+const BRAND_DOMAINS = [
+  {m:/scb|ไทยพาณิชย์/i, d:'scb.co.th'}, {m:/kbank|kasikorn|กสิกร/i, d:'kasikornbank.com'},
+  {m:/krungthai|ktb|กรุงไทย/i, d:'krungthai.com'}, {m:/bbl|bangkok bank|กรุงเทพ/i, d:'bangkokbank.com'},
+  {m:/krungsri|กรุงศรี/i, d:'krungsri.com'}, {m:/ttb|tmb|ทหารไทย/i, d:'ttbbank.com'},
+  {m:/gsb|ออมสิน/i, d:'gsb.or.th'}, {m:/^set$/i, d:'set.or.th'}, {m:/^tfex$/i, d:'tfex.co.th'}
+];
+const BTC_SVG = '<svg viewBox="0 0 32 32" aria-label="Bitcoin"><circle cx="16" cy="16" r="16" fill="#F7931A"/><g transform="rotate(14 16 16)" fill="#fff"><text x="16" y="23" text-anchor="middle" font-size="19" font-weight="800" font-family="Arial,Helvetica,sans-serif">B</text><rect x="13" y="5.5" width="1.8" height="3.2"/><rect x="17.2" y="5.5" width="1.8" height="3.2"/><rect x="13" y="24.2" width="1.8" height="3.2"/><rect x="17.2" y="24.2" width="1.8" height="3.2"/></g></svg>';
+function brandDomain(name){ const b = BRAND_DOMAINS.find(x=>x.m.test(String(name||'').trim())); return b ? b.d : null; }
+function brandErr(img){
+  const n = Number(img.dataset.n||0)+1, d = img.dataset.d;
+  if(n===1){ img.dataset.n = n; img.src = 'https://icons.duckduckgo.com/ip3/'+d+'.ico'; return; }
+  const span = document.createElement('div'); span.className = 'acc-icon'; span.style.background = img.dataset.bg; span.textContent = img.dataset.ini;
+  img.replaceWith(span);
+}
+// ไอคอนของบัญชี/พอร์ต: crypto = Bitcoin, แบงก์/SET/TFEX = โลโก้จากเว็บ, อื่น ๆ = ตัวอักษรย่อในกล่องสี
+function brandIcon(name, bg, ini, isCrypto){
+  if(isCrypto) return '<div class="acc-icon btc">'+BTC_SVG+'</div>';
+  const d = brandDomain(name);
+  if(d) return '<img class="acc-icon img" src="https://www.google.com/s2/favicons?domain='+d+'&sz=128" data-d="'+d+'" data-n="0" data-bg="'+esc(bg)+'" data-ini="'+esc(ini)+'" alt="" onerror="brandErr(this)">';
+  return '<div class="acc-icon" style="background:'+bg+'">'+esc(ini)+'</div>';
+}
+
 function renderAccountsList(){
   document.getElementById('accList').innerHTML = accounts.map(a=>{
     const allocHtml = (a.allocations||[]).map(al=>'<span class="alloc-tag">'+esc(al.label)+': ฿'+mAmt(al.amount)+'</span>').join('');
-    return '<div class="acc-card acc-row"><div style="min-width:0;"><div class="acc-top"><div class="acc-icon" style="background:var(--'+esc(a.color)+')">'+esc(a.name.slice(0,2).toUpperCase())+'</div>' +
+    return '<div class="acc-card acc-row"><div style="min-width:0;"><div class="acc-top">'+brandIcon(a.name,'var(--'+a.color+')',a.name.slice(0,2).toUpperCase(),false)+'' +
       '<div><div class="acc-name">'+esc(a.name)+'</div><div class="acc-purpose">'+esc(a.purpose)+'</div></div></div>' +
       (allocHtml?'<div class="alloc-wrap">'+allocHtml+'</div>':'')+'</div>' +
       '<div class="acc-bal">฿'+mInput('acc-bal-input','data-acc="'+esc(a.id)+'"',a.balance)+'</div></div>';
@@ -1129,7 +1156,7 @@ function renderAccountsList(){
 function renderOverviewPortfolioList(){
   const wrap = document.getElementById('overviewPortfolioList');
   wrap.innerHTML = OVERVIEW_ASSET_DEFS.map(d=>{
-    return '<div class="acc-card"><div class="acc-top"><div class="acc-icon" style="background:var(--'+d.color+')">'+(d.ic||d.name.slice(0,2).toUpperCase())+'</div>' +
+    return '<div class="acc-card"><div class="acc-top">'+brandIcon(d.key==='thai_stock'?'SET':(d.key==='tfex'?'TFEX':d.name),'var(--'+d.color+')',(d.ic||d.name.slice(0,2).toUpperCase()),d.key==='crypto')+'' +
       '<div><div class="acc-name">'+d.name+'</div><div class="acc-purpose">ยอดปัจจุบันในพอร์ต</div></div></div>' +
       '<div class="acc-bal">฿'+mInput('ov-asset-input','data-asset="'+d.key+'"',(currentPortfolio[d.key]||0))+'</div></div>';
   }).join('') +
