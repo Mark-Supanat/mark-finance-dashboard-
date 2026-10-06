@@ -70,7 +70,6 @@
   .grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:16px;}
   .grid2.eq{grid-template-columns:1fr 1fr;}
   .grid2.eq > .card{margin-bottom:0;}
-  .hide-amt .sens{filter:blur(9px);user-select:none;pointer-events:none;}
   .eye-btn{background:var(--card);border:1px solid var(--border);border-radius:20px;width:34px;height:32px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);padding:0;}
   .eye-btn:hover{color:var(--text);}
   .eye-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
@@ -92,10 +91,18 @@
   #reserveSummary .reserve-card{margin-bottom:0;}
   #reserveSummary > .notice{grid-column:1/-1;}
   .hold-grp{border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
-  .hold-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;}
-  .hold-row:last-of-type{border-bottom:none;}
-  .hold-row .sym{flex:1;font-weight:600;}
-  .hold-row input{width:110px;text-align:right;padding:5px 7px;}
+  .hold-card{border-top:1px solid var(--border);padding:10px 0;}
+  .hold-card:first-of-type{border-top:none;}
+  .hold-main{display:flex;align-items:center;gap:10px;cursor:pointer;}
+  .hold-logo{width:34px;height:34px;border-radius:50%;object-fit:contain;background:#fff;border:1px solid var(--border);flex-shrink:0;}
+  .hold-logo.ini{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted);background:var(--bg);}
+  .hold-name{flex:1;min-width:0;font-size:14px;}
+  .hold-val{text-align:right;font-size:14px;}
+  .hold-pl{text-align:right;min-width:92px;font-size:13px;}
+  .hold-sub{font-size:11px;color:var(--muted);font-weight:400;}
+  .hold-detail{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-top:10px;padding:12px;background:var(--bg);border-radius:10px;}
+  .hold-detail input{padding:6px 8px;font-size:13px;}
+  .hold-k{font-size:11px;color:var(--muted);margin-bottom:3px;}
   .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;}
   .card h3{font-size:14.5px;font-weight:700;margin:0 0 14px;display:flex;justify-content:space-between;align-items:center;}
   .card h3 .sub{font-size:11.5px;color:var(--muted);font-weight:500;}
@@ -304,7 +311,7 @@
             <canvas id="portfolioDonut"></canvas>
             <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;">
               <span style="font-size:10px;color:var(--muted);">รวม</span>
-              <span id="portfolioDonutTotal" class="sens" style="font-size:14px;font-weight:700;"></span>
+              <span id="portfolioDonutTotal" style="font-size:14px;font-weight:700;"></span>
             </div>
           </div>
           <div id="portfolioDonutLegend" style="flex:1;min-width:150px;display:flex;flex-direction:column;gap:7px;font-size:12.5px;"></div>
@@ -496,6 +503,10 @@ const SEED_RES = [
 
 let pfExtReady=true, selectedPfYear=null;
 let txns=[], ptxns=[], alloc=[], accounts=[], reserves=[], transfers=[];
+let HIDE = false;                       // ซ่อนตัวเลข (แสดงเป็น ******)
+const MASK = '******';
+function mAmt(n){ return HIDE ? MASK : fmtAmt(n); }
+function mInput(cls, attrs, val, step){ return HIDE ? '<input type="text" readonly value="'+MASK+'" class="'+cls+'">' : '<input type="number" step="'+(step||1)+'" value="'+val+'" '+attrs+' class="'+cls+'">'; }
 let tfexReady = true;
 let currentPortfolio = {thai_stock:0, tfex:0, mega_stock:0, forex:0, crypto:0, cash:0, total:0};
 let activeMonth = null;
@@ -766,7 +777,7 @@ function renderReserveCards(){
     const logs = reserveLog.filter(l=>l.reserveId===r.id).slice(0,8);
     return '<div class="reserve-card" data-rc="'+esc(r.id)+'">' +
       '<div class="reserve-top"><span class="reserve-name">'+esc(r.name)+'</span><span class="reserve-count">'+(r.maxTopups?(r.maxTopups-r.used)+'/'+r.maxTopups+' ครั้ง':'')+'</span></div>' +
-      '<div class="sens" style="font-size:12px;color:var(--muted);margin-bottom:6px;">฿'+fmtAmt(r.current)+' / ฿'+fmtAmt(r.initial)+'</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">฿'+mAmt(r.current)+' / ฿'+mAmt(r.initial)+'</div>' +
       '<div class="reserve-track"><div class="reserve-fill" style="width:'+Math.min(100,Math.max(0,pct))+'%"></div></div>' +
       '<div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">' +
         '<button type="button" class="small-btn" data-rbtn="add" data-r="'+esc(r.id)+'"'+(reserveLogReady?'':' disabled')+'>+ เติม</button>' +
@@ -778,7 +789,7 @@ function renderReserveCards(){
         '<div style="display:flex;gap:6px;"><button type="button" class="small-btn" id="rfSave">บันทึก '+(reserveForm.dir==='add'?'เติม (+)':'ใช้ (−)')+'</button><button type="button" class="small-btn" id="rfCancel">ยกเลิก</button></div></div>' : '') +
       '<details style="margin-top:10px;"><summary style="font-size:11.5px;color:var(--muted);cursor:pointer;">ประวัติ ('+reserveLog.filter(l=>l.reserveId===r.id).length+') · แก้ยอดตรง ๆ</summary>' +
         (logs.length ? '<div style="font-size:12px;margin-top:6px;">'+logs.map(l=>'<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px solid var(--border);"><span>'+thDate(l.at)+' · '+(l.account?esc(accName(l.account)):'ไม่ระบุบัญชี')+(l.note?' · '+esc(l.note):'')+'</span><b style="color:'+(l.dir==='add'?'var(--income)':'var(--expense)')+'">'+(l.dir==='add'?'+':'−')+'฿'+fmtAmt(l.amount)+'</b></div>').join('')+'</div>' : '<div class="empty-note" style="margin-top:6px;">ยังไม่มีประวัติ</div>') +
-        '<div style="font-size:12px;color:var(--muted);margin-top:8px;display:flex;align-items:center;gap:6px;">แก้ยอดคงเหลือตรง ๆ ฿<input type="number" step="1" value="'+r.current+'" data-res="'+esc(r.id)+'" class="res-current-input" style="width:100px;padding:5px 7px;"></div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-top:8px;display:flex;align-items:center;gap:6px;">แก้ยอดคงเหลือตรง ๆ ฿'+(HIDE?'<input type="text" readonly value="'+MASK+'" style="width:100px;padding:5px 7px;">':'<input type="number" step="1" value="'+r.current+'" data-res="'+esc(r.id)+'" class="res-current-input" style="width:100px;padding:5px 7px;">')+'</div>' +
       '</details></div>';
   }).join('');
   el.querySelectorAll('[data-rbtn]').forEach(b=>{
@@ -816,60 +827,132 @@ async function saveReserveMove(){
 
 /* ---------- HOLDINGS (ถือหุ้นตัวไหนอยู่) ---------- */
 const HOLD_GROUPS = [
-  {g:'SET', name:'หุ้นไทย (SET)', key:'thai_stock'},
-  {g:'TFEX', name:'TFEX', key:'tfex'},
-  {g:'US Stock', name:'US Stock', key:'mega_stock'},
-  {g:'Crypto', name:'คริปโต', key:'crypto'}
+  {g:'SET', name:'หุ้นไทย (SET)', key:'thai_stock', ccy:'THB'},
+  {g:'TFEX', name:'TFEX', key:'tfex', ccy:'THB'},
+  {g:'US Stock', name:'US Stock', key:'mega_stock', ccy:'USD'},
+  {g:'Crypto', name:'คริปโต', key:'crypto', ccy:'THB'}
 ];
-let holdings = [], holdingsReady = false;
+let holdings = [], holdingsReady = false, holdDetailReady = true, holdOpen = new Set();
+let usdthb = (()=>{ try{ return Number(localStorage.getItem('usdthb'))||33.5; }catch(e){ return 33.5; } })();
+function lsGet(k){ try{ return localStorage.getItem(k)||''; }catch(e){ return ''; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function fmt2(n){ return new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n); }
+function fmtQty(n){ return new Intl.NumberFormat('en-US',{maximumFractionDigits:7}).format(n); }
+function mFx(n){ return HIDE ? MASK : fmt2(n); }
+function holdCcy(h){ const G = HOLD_GROUPS.find(x=>x.g===h.grp); return h.ccy || (G?G.ccy:'THB'); }
 async function loadHoldings(){
   try{
     const rows = await fetchAll('app_holdings','created_at');
-    holdings = rows.map(r=>({id:r.id, grp:r.grp, symbol:r.symbol, amount:Number(r.amount), note:r.note}));
+    holdDetailReady = rows.length===0 || ('qty' in rows[0]);
+    holdings = rows.map(r=>({id:r.id, grp:r.grp, symbol:r.symbol, amount:Number(r.amount||0), note:r.note,
+      qty:Number(r.qty||0), cost:Number(r.cost||0), price:Number(r.price||0), dayPct:(r.day_pct===null||r.day_pct===undefined)?null:Number(r.day_pct), ccy:r.ccy||null}));
     holdingsReady = true;
   }catch(e){ console.warn('app_holdings:', e); holdings = []; holdingsReady = false; }
 }
+// คำนวณมูลค่า/กำไรของหุ้นหนึ่งตัว (สกุลเงินของหุ้น) + แปลงเป็นบาท
+function holdCalc(h){
+  const ccy = holdCcy(h), fx = ccy==='USD' ? usdthb : 1;
+  if(h.qty>0){
+    const px = h.price>0 ? h.price : h.cost;
+    const value = h.qty*px, costTot = h.qty*h.cost, pl = value-costTot;
+    return {ccy, fx, detail:true, value, costTot, pl, plPct: costTot>0 ? pl/costTot*100 : null, thb: value*fx, noPrice: !(h.price>0)};
+  }
+  return {ccy, fx, detail:false, value:h.amount/fx, costTot:0, pl:0, plPct:null, thb:h.amount, noPrice:true};
+}
+const LOGO_SRC = [s=>'https://assets.parqet.com/logos/symbol/'+encodeURIComponent(s)+'?format=png', s=>'https://financialmodelingprep.com/image-stock/'+encodeURIComponent(s)+'.png'];
+function holdLogoErr(img){
+  const n = Number(img.dataset.n||0)+1, sym = img.dataset.sym;
+  if(n<LOGO_SRC.length){ img.dataset.n = n; img.src = LOGO_SRC[n](sym); return; }
+  const span = document.createElement('span'); span.className = 'hold-logo ini'; span.textContent = sym.slice(0,2);
+  img.replaceWith(span);
+}
+function holdLogoHtml(h){
+  if(h.grp==='US Stock') return '<img class="hold-logo" src="'+LOGO_SRC[0](h.symbol)+'" data-sym="'+esc(h.symbol)+'" data-n="0" alt="" onerror="holdLogoErr(this)">';
+  return '<span class="hold-logo ini">'+esc(h.symbol.slice(0,2))+'</span>';
+}
+function pctChip(v){ return v===null||v===undefined ? '' : '<span style="color:'+(v<0?'var(--expense)':'var(--income)')+';font-weight:600;">'+(v<0?'▼ ':'▲ ')+Math.abs(v).toFixed(2)+'%</span>'; }
 function renderHoldings(){
   const el = document.getElementById('holdingsBox'); if(!el) return;
   if(!holdingsReady){
     el.innerHTML = '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:12.5px;">ยังจดรายชื่อหุ้นไม่ได้ — ยังไม่ได้รันไฟล์ SQL <b>g1_tfex_holdings.sql</b> ใน Supabase</div>';
     return;
   }
+  const hasKey = !!lsGet('finnhubKey'), updated = lsGet('priceUpdatedAt');
+  let html = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
+    '<h3 style="margin:0;font-size:13.5px;">ถืออะไรอยู่ <span class="sub" style="font-weight:500;">จดเอง — ไม่ไปเปลี่ยนยอดพอร์ตด้านบน</span></h3>' +
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11.5px;color:var(--muted);">' +
+      '<span>1 USD =</span><input type="'+(HIDE?'text':'number')+'" step="0.01" id="fxInput" value="'+usdthb+'" style="width:72px;padding:4px 6px;font-size:12px;"><span>บาท</span>' +
+      '<button type="button" class="small-btn" id="pxRefresh">↻ อัปเดตราคา US</button><button type="button" class="small-btn" id="pxSettings">⚙</button></div></div>' +
+    '<div style="font-size:10.5px;color:var(--muted);margin:4px 0 10px;">'+(hasKey?'ดึงราคาสดจาก Finnhub'+(updated?' · อัปเดตล่าสุด '+esc(updated):''):'ยังไม่ได้ตั้งค่าราคาสด (กด ⚙ ใส่ API key ฟรีของ Finnhub) — ตอนนี้กรอกราคาเองได้')+'</div>';
   const groupsHtml = HOLD_GROUPS.map(G=>{
     const items = holdings.filter(h=>h.grp===G.g);
     if(!items.length) return '';
-    const sum = items.reduce((a,h)=>a+h.amount,0);
-    const asset = Number(currentPortfolio[G.key]||0), rest = asset - sum;
-    return '<div class="hold-grp"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;"><b style="font-size:13px;">'+G.name+'</b>' +
-      '<span class="sens" style="font-size:12px;color:var(--muted);">รวม ฿'+fmtAmt(sum)+(rest>0.5?' · ยังไม่ได้ลงรายตัว ฿'+fmtAmt(rest):(rest<-0.5?' · เกินยอดพอร์ต ฿'+fmtAmt(-rest):''))+'</span></div>' +
-      items.map(h=>'<div class="hold-row"><span class="sym">'+esc(h.symbol)+(h.note?' <span style="font-weight:400;color:var(--muted);font-size:11px;">'+esc(h.note)+'</span>':'')+'</span>' +
-        '<span class="sens">฿<input type="number" step="any" value="'+h.amount+'" data-hold="'+esc(h.id)+'" class="hold-amt"></span>' +
-        '<button class="del-btn" data-hdel="'+esc(h.id)+'" title="ลบ">×</button></div>').join('') + '</div>';
+    const calc = items.map(h=>({h, c:holdCalc(h)}));
+    const sumThb = calc.reduce((a,x)=>a+x.c.thb,0);
+    const asset = Number(currentPortfolio[G.key]||0), rest = asset - sumThb;
+    return '<div class="hold-grp"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><b style="font-size:13px;">'+G.name+' <span style="font-weight:500;color:var(--muted);font-size:11.5px;">'+items.length+' ตัว</span></b>' +
+      '<span style="font-size:12px;color:var(--muted);">รวม ≈ ฿'+mAmt(sumThb)+(rest>0.5?' · ยังไม่ได้ลงรายตัว ฿'+mAmt(rest):(rest<-0.5?' · เกินยอดพอร์ต ฿'+mAmt(-rest):''))+'</span></div>' +
+      calc.sort((p,q)=>q.c.thb-p.c.thb).map(({h,c})=>{
+        const open = holdOpen.has(h.id), cur = c.ccy==='USD'?'USD':'บาท';
+        const w = sumThb>0 ? (c.thb/sumThb*100) : 0;
+        const plColor = (c.pl<0)?'var(--expense)':'var(--income)';
+        return '<div class="hold-card'+(open?' open':'')+'" data-hid="'+esc(h.id)+'">' +
+          '<div class="hold-main" data-toggle="'+esc(h.id)+'">' + holdLogoHtml(h) +
+            '<div class="hold-name"><b>'+esc(h.symbol)+'</b><div class="hold-sub">◔ '+w.toFixed(1)+'%'+(h.dayPct!==null&&h.dayPct!==undefined?' · ตลาด '+pctChip(h.dayPct):'')+'</div></div>' +
+            '<div class="hold-val"><b>'+(c.ccy==='USD'?mFx(c.value):mAmt(c.value))+'</b>'+(c.ccy==='USD'?'<div class="hold-sub">≈ '+mAmt(c.thb)+' THB</div>':'<div class="hold-sub">บาท</div>')+'</div>' +
+            '<div class="hold-pl">'+(c.plPct===null?'<span class="hold-sub">ยังไม่มีต้นทุน</span>':pctChip(c.plPct)+'<div style="font-size:11.5px;color:'+plColor+';">('+(c.pl<0?'−':'+')+(HIDE?MASK:fmt2(Math.abs(c.pl)))+' '+(c.ccy==='USD'?'USD':'')+')</div>')+'</div></div>' +
+          (open ? '<div class="hold-detail">' +
+            '<div><div class="hold-k">จำนวนหุ้นคงเหลือ</div>'+(HIDE?'<div>'+MASK+'</div>':'<input type="number" step="any" value="'+(h.qty||'')+'" data-f="qty" data-hid="'+esc(h.id)+'" placeholder="0">')+'</div>' +
+            '<div><div class="hold-k">ราคา ('+cur+') และ % เปลี่ยน 1 วัน</div>'+(HIDE?'<div>'+MASK+'</div>':'<input type="number" step="any" value="'+(h.price||'')+'" data-f="price" data-hid="'+esc(h.id)+'" placeholder="ราคาล่าสุด">')+'<div class="hold-sub" style="margin-top:3px;">'+(h.dayPct!==null&&h.dayPct!==undefined?pctChip(h.dayPct):'<span>ยังไม่มีข้อมูลตลาด</span>')+'</div></div>' +
+            '<div><div class="hold-k">ต้นทุนต่อหุ้น ('+cur+')</div>'+(HIDE?'<div>'+MASK+'</div>':'<input type="number" step="any" value="'+(h.cost||'')+'" data-f="cost" data-hid="'+esc(h.id)+'" placeholder="0">')+'</div>' +
+            '<div><div class="hold-k">ต้นทุนรวม ('+cur+')</div><div style="font-size:15px;font-weight:600;">'+(c.detail?(c.ccy==='USD'?mFx(c.costTot):mAmt(c.costTot)):'-')+'</div></div>' +
+            (c.detail && h.dayPct!==null && h.dayPct!==undefined && c.plPct!==null ? '<div style="grid-column:1/-1;font-size:12px;">ตลาดวันนี้ '+pctChip(h.dayPct)+' · พอร์ตเรา (จากต้นทุน) '+pctChip(c.plPct)+'</div>' : '') +
+            (!c.detail ? '<div style="grid-column:1/-1;font-size:11.5px;color:var(--muted);">จดแบบรวมมูลค่า (฿'+mAmt(h.amount)+') — ใส่จำนวนหุ้น ต้นทุน และราคา เพื่อดูกำไร/ขาดทุน</div>' : '') +
+            '<div style="grid-column:1/-1;text-align:right;"><button class="small-btn" data-hdel="'+esc(h.id)+'">ลบ '+esc(h.symbol)+'</button></div></div>' : '') +
+          '</div>';
+      }).join('') + '</div>';
   }).join('');
-  el.innerHTML = '<h3 style="margin:0 0 4px;font-size:13.5px;">ถืออะไรอยู่ <span class="sub" style="font-weight:500;">จดเองเพื่อดูภาพรวม — ไม่ไปเปลี่ยนยอดพอร์ตด้านบน</span></h3>' +
-    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:10px;">' + (groupsHtml || '<div class="empty-note">ยังไม่ได้จดรายตัว — เพิ่มด้านล่าง</div>') + '</div>' +
-    '<div class="form-row" style="margin-top:12px;align-items:flex-end;">' +
-      '<div><label class="field-label">ชื่อหุ้น / สัญลักษณ์</label><input type="text" id="hdSym" placeholder="เช่น PTT, NVDA"></div>' +
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;">' + (groupsHtml || '<div class="empty-note">ยังไม่ได้จดรายตัว — เพิ่มด้านล่าง</div>') + '</div>' +
+    (holdDetailReady ? '' : '<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:12px;margin-top:10px;">ยังเก็บจำนวนหุ้น/ต้นทุน/ราคาไม่ได้ — ต้องรันไฟล์ SQL <b>h1_holdings_detail.sql</b> ใน Supabase ก่อน</div>') +
+    '<div class="form-row" style="margin-top:12px;align-items:flex-end;flex-wrap:wrap;">' +
+      '<div><label class="field-label">ชื่อหุ้น / สัญลักษณ์</label><input type="text" id="hdSym" placeholder="เช่น GOOGL, PTT"></div>' +
       '<div><label class="field-label">พอร์ต</label><select id="hdGrp">'+HOLD_GROUPS.map(G=>'<option value="'+G.g+'">'+G.name+'</option>').join('')+'</select></div>' +
-      '<div><label class="field-label">มูลค่า (บาท)</label><input type="number" step="any" id="hdAmt" placeholder="0"></div>' +
+      '<div><label class="field-label">จำนวนหุ้น</label><input type="number" step="any" id="hdQty" placeholder="0.8691722"></div>' +
+      '<div><label class="field-label" id="hdCostLb">ต้นทุนต่อหุ้น</label><input type="number" step="any" id="hdCost" placeholder="345.156"></div>' +
+      '<div><label class="field-label">ราคาปัจจุบัน (ถ้ามี)</label><input type="number" step="any" id="hdPrice" placeholder="ไม่ใส่ก็ได้"></div>' +
       '<div><button type="button" class="submit" id="hdAdd" style="padding:9px 16px;">+ เพิ่ม</button></div></div>';
+  el.innerHTML = html;
+
+  const grpSel = document.getElementById('hdGrp');
+  const upLabel = ()=>{ const G = HOLD_GROUPS.find(x=>x.g===grpSel.value); document.getElementById('hdCostLb').textContent = 'ต้นทุนต่อหุ้น ('+(G.ccy==='USD'?'USD':'บาท')+')'; };
+  grpSel.onchange = upLabel; upLabel();
   document.getElementById('hdAdd').onclick = async ()=>{
     const symbol = document.getElementById('hdSym').value.trim().toUpperCase();
-    const grp = document.getElementById('hdGrp').value;
-    const amount = parseFloat(document.getElementById('hdAmt').value)||0;
+    const grp = grpSel.value, G = HOLD_GROUPS.find(x=>x.g===grp);
+    const qty = parseFloat(document.getElementById('hdQty').value)||0;
+    const cost = parseFloat(document.getElementById('hdCost').value)||0;
+    const price = parseFloat(document.getElementById('hdPrice').value)||0;
     if(!symbol){ showError('ใส่ชื่อหุ้นก่อน'); return; }
-    const row = {id:uid(), grp, symbol, amount};
+    if(!(qty>0) || !(cost>0)){ showError('ใส่จำนวนหุ้นและต้นทุนต่อหุ้นด้วย'); return; }
+    const row = {id:uid(), grp, symbol, amount:0, qty, cost, price:price||null, ccy:G.ccy};
     const {error} = await sb.from('app_holdings').insert(row);
-    if(error){ showError('เพิ่มหุ้นไม่สำเร็จ: '+error.message); return; }
-    holdings.push(row); renderHoldings();
+    if(error){ showError('เพิ่มหุ้นไม่สำเร็จ: '+error.message+(String(error.message).match(/qty|cost|price|ccy/)?' (ต้องรันไฟล์ h1_holdings_detail.sql ใน Supabase ก่อน)':'')); return; }
+    holdings.push({id:row.id, grp, symbol, amount:0, note:null, qty, cost, price:price||0, dayPct:null, ccy:G.ccy});
+    renderHoldings();
   };
-  el.querySelectorAll('.hold-amt').forEach(inp=>{
+  el.querySelectorAll('[data-toggle]').forEach(m=>{
+    m.onclick = ()=>{ const id = m.dataset.toggle; if(holdOpen.has(id)) holdOpen.delete(id); else holdOpen.add(id); renderHoldings(); };
+  });
+  el.querySelectorAll('input[data-f]').forEach(inp=>{
     inp.addEventListener('change', async ()=>{
-      const h = holdings.find(x=>x.id===inp.dataset.hold); if(!h) return;
-      const v = parseFloat(inp.value)||0;
-      const {error} = await sb.from('app_holdings').update({amount:v}).eq('id', h.id);
-      if(error){ showError('แก้ไม่สำเร็จ: '+error.message); return; }
-      h.amount = v; renderHoldings();
+      const h = holdings.find(x=>x.id===inp.dataset.hid); if(!h) return;
+      const f = inp.dataset.f, v = parseFloat(inp.value)||0;
+      const patch = {[f]: (f==='price' && !v) ? null : v};
+      if(f==='price') patch.day_pct = null;
+      const {error} = await sb.from('app_holdings').update(patch).eq('id', h.id);
+      if(error){ showError('แก้ไม่สำเร็จ: '+error.message+' (ต้องรันไฟล์ h1_holdings_detail.sql ใน Supabase ก่อน)'); return; }
+      h[f] = v; if(f==='price') h.dayPct = null;
+      renderHoldings();
     });
   });
   el.querySelectorAll('[data-hdel]').forEach(b=>{
@@ -878,25 +961,60 @@ function renderHoldings(){
       if(!confirm('ลบ '+h.symbol+' ออกจากรายการ?')) return;
       const {error} = await sb.from('app_holdings').delete().eq('id', h.id);
       if(error){ showError('ลบไม่สำเร็จ: '+error.message); return; }
-      holdings = holdings.filter(x=>x.id!==h.id); renderHoldings();
+      holdings = holdings.filter(x=>x.id!==h.id); holdOpen.delete(h.id); renderHoldings();
     };
   });
+  const fx = document.getElementById('fxInput');
+  if(fx && !HIDE) fx.addEventListener('change', ()=>{ const v = parseFloat(fx.value); if(v>0){ usdthb = v; lsSet('usdthb', String(v)); renderHoldings(); } });
+  document.getElementById('pxSettings').onclick = ()=>{
+    const cur = lsGet('finnhubKey');
+    const v = prompt('ใส่ Finnhub API key (สมัครฟรีที่ finnhub.io → Dashboard)\nเก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น ไม่ถูกบันทึกลงเว็บ/ฐานข้อมูล\nเว้นว่างแล้วกด OK เพื่อลบ key', cur);
+    if(v===null) return;
+    lsSet('finnhubKey', v.trim()); renderHoldings();
+  };
+  document.getElementById('pxRefresh').onclick = refreshPrices;
+}
+async function refreshPrices(){
+  const key = lsGet('finnhubKey');
+  if(!key){ showError('ยังไม่ได้ใส่ API key — กดปุ่ม ⚙ แล้ววาง Finnhub API key ก่อน'); return; }
+  const list = holdings.filter(h=>h.grp==='US Stock');
+  if(!list.length){ showError('ยังไม่มีหุ้น US ในรายการ'); return; }
+  const btn = document.getElementById('pxRefresh'); if(btn){ btn.disabled = true; btn.textContent = 'กำลังดึง...'; }
+  let ok = 0, fail = [];
+  for(const h of list){
+    try{
+      const r = await fetch('https://finnhub.io/api/v1/quote?symbol='+encodeURIComponent(h.symbol)+'&token='+encodeURIComponent(key));
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const q = await r.json();
+      if(!(q.c>0)) throw new Error('ไม่พบราคา');
+      h.price = q.c; h.dayPct = (typeof q.dp==='number') ? q.dp : null;
+      await sb.from('app_holdings').update({price:h.price, day_pct:h.dayPct}).eq('id', h.id);
+      ok++;
+    }catch(e){ fail.push(h.symbol+' ('+e.message+')'); }
+  }
+  try{
+    const fr = await fetch('https://open.er-api.com/v6/latest/USD'); const fj = await fr.json();
+    if(fj && fj.rates && fj.rates.THB>0){ usdthb = Math.round(fj.rates.THB*100)/100; lsSet('usdthb', String(usdthb)); }
+  }catch(e){}
+  const d = new Date(); lsSet('priceUpdatedAt', String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'));
+  if(fail.length) showError('ดึงราคาไม่สำเร็จ: '+fail.join(', '));
+  renderHoldings();
 }
 
 /* ---------- ซ่อน/แสดงตัวเลข (จำค่าล่าสุดในเบราว์เซอร์นี้) ---------- */
-function applyHideAmt(hide){
+function applyHideAmt(hide, rerender){
+  HIDE = hide;
   document.body.classList.toggle('hide-amt', hide);
   const b = document.getElementById('eyeBtn'); if(b) b.title = hide ? 'แสดงตัวเลข' : 'ซ่อนตัวเลข';
   hideCfTip();
+  if(rerender){ renderOverview(); }
 }
 (function(){
-  let hide = false;
-  try{ hide = localStorage.getItem('hideAmounts')==='1'; }catch(e){}
-  applyHideAmt(hide);
+  applyHideAmt(lsGet('hideAmounts')==='1', false);
   document.getElementById('eyeBtn').addEventListener('click', ()=>{
-    const now = !document.body.classList.contains('hide-amt');
-    applyHideAmt(now);
-    try{ localStorage.setItem('hideAmounts', now?'1':'0'); }catch(e){}
+    const now = !HIDE;
+    lsSet('hideAmounts', now?'1':'0');
+    applyHideAmt(now, true);
   });
 })();
 
@@ -925,9 +1043,9 @@ function showCfTip(col){
   const x = cashflowData.find(d=>d.m===col.dataset.m); if(!x) return;
   const tip = document.getElementById('cfTip'), wrap = tip.parentNode;
   document.querySelectorAll('#cashflowBars .bar-col').forEach(c=>c.classList.toggle('sel', c===col));
-  const hide = document.body.classList.contains('hide-amt');
+  const hide = HIDE;
   const mm = Number(x.m.split('-')[1]);
-  const v = n=> hide ? '••••' : '฿'+fmtAmt(Math.abs(n));
+  const v = n=> hide ? MASK : '฿'+fmtAmt(Math.abs(n));
   tip.innerHTML = '<b>'+THAI_MONTHS[mm-1]+' '+x.m.slice(0,4)+'</b><br>สุทธิ '+(hide?'':(x.net<0?'−':'+'))+v(x.net)+'<br><span style="opacity:.8">รับ '+v(x.inc)+' · จ่าย '+v(x.exp)+'</span>';
   tip.style.display = 'block';
   const wr = wrap.getBoundingClientRect(), cr = col.getBoundingClientRect();
@@ -949,8 +1067,8 @@ function renderOverview(){
   const stats = [
     {k:'Total Net Worth', v:netWorth, icon:'◆', color:'blue', chg:null, sens:true},
     {k:'เงินสดในบัญชี', v:accountsTotal(), icon:'🏦', color:'purple', chg:null, sens:true},
-    {k:'รายรับเดือนนี้', v:income, icon:'↓', color:'teal', chg:null, forceUp:true},
-    {k:'รายจ่ายเดือนนี้', v:expense, icon:'↑', color:'rose', chg:null, forceDown:true},
+    {k:'รายรับเดือนนี้', v:income, icon:'↓', color:'teal', chg:null, forceUp:true, sens:true},
+    {k:'รายจ่ายเดือนนี้', v:expense, icon:'↑', color:'rose', chg:null, forceDown:true, sens:true},
   ];
   document.getElementById('statGrid').innerHTML = stats.map(s=>{
     let chgHtml = '';
@@ -958,7 +1076,7 @@ function renderOverview(){
       chgHtml = '<span class="stat-chg '+(s.chg>=0?'up':'down')+'">'+(s.chg>=0?'▲':'▼')+' '+Math.abs(s.chg).toFixed(1)+'%</span>';
     }
     return '<div class="stat-card"><div class="stat-top"><div class="stat-icon" style="background:var(--'+s.color+'-soft);color:var(--'+s.color+')">'+s.icon+'</div>'+chgHtml+'</div>'+
-      '<div class="stat-k">'+s.k+'</div><div class="stat-v'+(s.sens?' sens':'')+'">฿'+fmtAmt(s.v)+'</div></div>';
+      '<div class="stat-k">'+s.k+'</div><div class="stat-v">฿'+(s.sens?mAmt(s.v):fmtAmt(s.v))+'</div></div>';
   }).join('');
 
   const bars = document.getElementById('cashflowBars');
@@ -991,11 +1109,11 @@ function renderOverview(){
 
 function renderAccountsList(){
   document.getElementById('accList').innerHTML = accounts.map(a=>{
-    const allocHtml = (a.allocations||[]).map(al=>'<span class="alloc-tag sens">'+esc(al.label)+': ฿'+fmtAmt(al.amount)+'</span>').join('');
+    const allocHtml = (a.allocations||[]).map(al=>'<span class="alloc-tag">'+esc(al.label)+': ฿'+mAmt(al.amount)+'</span>').join('');
     return '<div class="acc-card acc-row"><div style="min-width:0;"><div class="acc-top"><div class="acc-icon" style="background:var(--'+esc(a.color)+')">'+esc(a.name.slice(0,2).toUpperCase())+'</div>' +
       '<div><div class="acc-name">'+esc(a.name)+'</div><div class="acc-purpose">'+esc(a.purpose)+'</div></div></div>' +
       (allocHtml?'<div class="alloc-wrap">'+allocHtml+'</div>':'')+'</div>' +
-      '<div class="acc-bal sens">฿<input type="number" step="1" value="'+a.balance+'" data-acc="'+esc(a.id)+'" class="acc-bal-input"></div></div>';
+      '<div class="acc-bal">฿'+mInput('acc-bal-input','data-acc="'+esc(a.id)+'"',a.balance)+'</div></div>';
   }).join('');
   document.querySelectorAll('.acc-bal-input').forEach(inp=>{
     inp.addEventListener('change', async ()=>{
@@ -1013,11 +1131,11 @@ function renderOverviewPortfolioList(){
   wrap.innerHTML = OVERVIEW_ASSET_DEFS.map(d=>{
     return '<div class="acc-card"><div class="acc-top"><div class="acc-icon" style="background:var(--'+d.color+')">'+(d.ic||d.name.slice(0,2).toUpperCase())+'</div>' +
       '<div><div class="acc-name">'+d.name+'</div><div class="acc-purpose">ยอดปัจจุบันในพอร์ต</div></div></div>' +
-      '<div class="acc-bal sens">฿<input type="number" step="1" value="'+(currentPortfolio[d.key]||0)+'" data-asset="'+d.key+'" class="ov-asset-input"></div></div>';
+      '<div class="acc-bal">฿'+mInput('ov-asset-input','data-asset="'+d.key+'"',(currentPortfolio[d.key]||0))+'</div></div>';
   }).join('') +
     '<div class="acc-card" style="opacity:.7;"><div class="acc-top"><div class="acc-icon" style="background:var(--slate)">เง</div>' +
     '<div><div class="acc-name">เงินสด</div><div class="acc-purpose">รวมจาก My Accounts ด้านบนแล้ว</div></div></div>' +
-    '<div class="acc-bal sens">฿'+fmtAmt(accountsTotal())+'</div></div>';
+    '<div class="acc-bal">฿'+mAmt(accountsTotal())+'</div></div>';
   wrap.querySelectorAll('.ov-asset-input').forEach(inp=>{
     inp.addEventListener('change', async ()=>{
       currentPortfolio[inp.dataset.asset] = parseFloat(inp.value)||0;
@@ -1038,7 +1156,7 @@ function renderPortfolioDonut(){
   const slices = OVERVIEW_ASSET_DEFS.map(d=>({name:d.name, key:d.key, value:Number(currentPortfolio[d.key])||0}));
   slices.push({name:'เงินสด', key:'cash', value:accountsTotal()});
   const total = slices.reduce((s,x)=>s+x.value,0);
-  document.getElementById('portfolioDonutTotal').textContent = '฿'+fmtAmt(total);
+  document.getElementById('portfolioDonutTotal').textContent = '฿'+mAmt(total);
   document.getElementById('portfolioDonutLegend').innerHTML = slices.map(s=>{
     const pct = total ? Math.round((s.value/total)*100) : 0;
     return '<span style="display:flex;align-items:center;gap:7px;">' +
@@ -1057,7 +1175,7 @@ function renderPortfolioDonut(){
     },
     options: {
       responsive:true, maintainAspectRatio:false, cutout:'70%',
-      plugins:{ legend:{display:false}, tooltip:{callbacks:{ label:(ctx)=>ctx.label+': ฿'+fmtAmt(ctx.parsed) }} }
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{ label:(ctx)=>ctx.label+': ฿'+mAmt(ctx.parsed) }} }
     }
   });
 }
