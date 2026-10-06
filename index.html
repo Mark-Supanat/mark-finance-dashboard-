@@ -369,11 +369,11 @@
       </div>
 
       <div class="card">
-        <h3>เงินโอนเข้า-ออกพอร์ตเทรด <span class="sub">Forex / TFEX / S50 / MGO</span></h3>
+        <h3>เงินโอนเข้า-ออกพอร์ตเทรด <span class="sub">Forex / TFEX / SET / US Stock</span></h3>
         <form id="pfForm" style="margin:12px 0 16px;padding-bottom:14px;border-bottom:1px solid var(--border);">
           <div class="form-row">
             <div><label class="field-label">วันที่</label><input type="date" id="pfDate" required></div>
-            <div><label class="field-label">พอร์ต</label><select id="pfPort"><option value="port-forex">Forex</option><option value="port-tfex">TFEX</option></select></div>
+            <div><label class="field-label">พอร์ต</label><select id="pfPort"><option value="port-forex">Forex</option><option value="port-tfex">TFEX</option><option value="port-set">SET</option><option value="port-us">US Stock</option></select></div>
             <div><label class="field-label">รายการ</label><select id="pfDir"><option value="out">ถอนออกจากพอร์ต</option><option value="in">ฝากเข้าพอร์ต</option></select></div>
           </div>
           <div class="form-row">
@@ -909,11 +909,17 @@ function renderPortfolioDonut(){
   });
 }
 
+// พอร์ตเทรด: id → ชื่อที่แสดง + ช่องในยอดพอร์ตที่ไปรวม (SET รวมกับ TFEX, US Stock รวมกับหุ้นเมกา+จีน)
+const PORT_DEFS = {
+  'port-forex': {label:'Forex', key:'forex'},
+  'port-tfex':  {label:'TFEX', key:'thai_stock'},
+  'port-set':   {label:'SET', key:'thai_stock'},
+  'port-us':    {label:'US Stock', key:'mega_stock'}
+};
 function accName(id){
   const a=accounts.find(x=>x.id===id);
   if(a) return a.name;
-  if(id==='port-forex') return 'พอร์ต Forex';
-  if(id==='port-tfex') return 'พอร์ต TFEX';
+  if(PORT_DEFS[id]) return 'พอร์ต '+PORT_DEFS[id].label;
   return id;
 }
 
@@ -930,9 +936,9 @@ function populateAccountSelects(){
   document.getElementById('pfReserve').innerHTML = resOpts;
   if(!document.getElementById('pfDate').value) document.getElementById('pfDate').value = todayISO();
 }
-function isPortfolioAcc(id){ return id==='port-forex' || id==='port-tfex'; }
-function portfolioAssetKey(id){ return id==='port-forex' ? 'forex' : 'thai_stock'; }
-function portfolioAccLabel(id){ return id==='port-forex' ? 'Forex' : 'TFEX'; }
+function isPortfolioAcc(id){ return !!PORT_DEFS[id]; }
+function portfolioAssetKey(id){ return PORT_DEFS[id].key; }
+function portfolioAccLabel(id){ return PORT_DEFS[id].label; }
 
 let editingTxId = null;
 function setType(type){
@@ -1147,9 +1153,10 @@ async function deletePortfolioLogRow(id){
   if(!p) return;
   if(guardLocked(p.date)) return;
   let tid = p.transferId;
-  if(!tid && (p.account==='Forex' || p.account==='TFEX')){
+  const legacyPortId = Object.keys(PORT_DEFS).find(k=>PORT_DEFS[k].label===p.account);
+  if(!tid && legacyPortId){
     // แถวที่สร้างจากฟอร์มโอนรุ่นก่อน (ยังไม่มี transfer_id): หารายการโอนคู่กันจากวันที่/พอร์ต/ยอด
-    const portId = p.account==='Forex' ? 'port-forex' : 'port-tfex';
+    const portId = legacyPortId;
     const m = transfers.find(t=>t.date===p.date && (p.income>0 ? (t.from===portId && t.amount===p.income) : (t.to===portId && t.amount===p.expense)));
     if(m) tid = m.id;
   }
@@ -1189,7 +1196,8 @@ function renderPortfolioAccSummary(){
   const cur = (typeof currentPortfolio==='object' && currentPortfolio) ? currentPortfolio : {};
   const groups = [
     {label:'Forex', accs:['Forex'], now:Number(cur.forex||0)},
-    {label:'TFEX', accs:['TFEX','S50','MGO'], now:Number(cur.thai_stock||0)}
+    {label:'TFEX + SET (หุ้นไทย)', accs:['TFEX','S50','MGO','SET'], now:Number(cur.thai_stock||0)},
+    {label:'US Stock (หุ้นเมกา + จีน)', accs:['US Stock'], now:Number(cur.mega_stock||0)}
   ];
   const signed = (n)=> (n<0?'−':'+')+'฿'+fmtAmt(Math.abs(n));
   const col = (n)=> n<0 ? 'var(--expense)' : 'var(--income)';
@@ -1208,12 +1216,12 @@ function renderPortfolioAccSummary(){
   document.getElementById('portfolioAccSummary').innerHTML =
     '<div style="overflow-x:auto;"><table class="tx"><thead><tr><th>พอร์ต</th><th style="text-align:right">ถอนออก</th><th style="text-align:right">ฝากเข้า</th>' +
     '<th style="text-align:right">สุทธิ (ถอน − ฝาก)</th><th style="text-align:right">มูลค่าพอร์ตตอนนี้</th><th style="text-align:right">กำไร/ขาดทุนโดยประมาณ</th></tr></thead><tbody>' +
-    rowsHtml + '<tr style="font-weight:700"><td>รวม Forex + TFEX</td><td style="text-align:right">฿'+fmtAmt(totOut)+'</td><td style="text-align:right">฿'+fmtAmt(totIn)+'</td>' +
+    rowsHtml + '<tr style="font-weight:700"><td>รวมทุกพอร์ต</td><td style="text-align:right">฿'+fmtAmt(totOut)+'</td><td style="text-align:right">฿'+fmtAmt(totIn)+'</td>' +
     '<td style="text-align:right;color:'+col(tNet)+'">'+signed(tNet)+'</td><td style="text-align:right">฿'+fmtAmt(totNow)+'</td>' +
     '<td style="text-align:right;color:'+col(tPl)+'">'+signed(tPl)+'</td></tr></tbody></table></div>' +
     '<div style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6;">' +
     'ยอดถอน/ฝากนี้ไม่ได้นับเป็นรายรับ-รายจ่ายของเดือน<br>' +
-    'กำไร/ขาดทุนโดยประมาณ = ถอนออก + มูลค่าพอร์ตตอนนี้ − ฝากเข้า · มูลค่าพอร์ตดึงจากหน้า Overview (TFEX ใช้ค่า "หุ้นไทย + TFEX") ' +
+    'กำไร/ขาดทุนโดยประมาณ = ถอนออก + มูลค่าพอร์ตตอนนี้ − ฝากเข้า · มูลค่าพอร์ตดึงจากหน้า Overview (TFEX+SET ใช้ค่า "หุ้นไทย + TFEX", US Stock ใช้ค่า "หุ้นเมกา + จีน") ' +
     'แม่นเมื่อประวัติฝากครบตั้งแต่ต้น ถ้ามีเงินตั้งต้นก่อนเริ่มบันทึกตัวเลขจะคลาดเคลื่อน</div>';
 }
 
@@ -1262,7 +1270,7 @@ function computeYearSummary(year){
   };
   return {year:y, income, expense, net: income-expense, txCount: tx.length,
     trfCount: transfers.filter(t=>t.date.slice(0,4)===y).length, months, cats,
-    pf:{forex: pfOf(['Forex']), tfex: pfOf(['TFEX','S50','MGO'])}};
+    pf:{forex: pfOf(['Forex']), tfex: pfOf(['TFEX','S50','MGO','SET']), us: pfOf(['US Stock'])}};
 }
 function buildYearSnapshot(year){
   const cp = currentPortfolio || {};
@@ -1394,7 +1402,7 @@ function renderArchiveDetail(y){
   html += '<h3 style="margin-top:18px;">รายจ่ายตามหมวดหมู่</h3>' +
     (st.cats.length ? tbl(['หมวดหมู่','จำนวน'], st.cats.map(c=>R([esc(c.name),'฿'+fmtAmt(c.amount)])).join('')) : '<div class="empty-note">ไม่มีรายจ่าย</div>');
   html += '<h3 style="margin-top:18px;">พอร์ตเทรด <span class="sub">ฝาก/ถอน (ไม่นับเป็นรายรับ-รายจ่าย)</span></h3>' +
-    tbl(['พอร์ต','ถอนออก','ฝากเข้า','สุทธิ (ถอน − ฝาก)'], [['Forex',st.pf.forex],['TFEX',st.pf.tfex]].map(([n,v])=>R([n,'฿'+fmtAmt(v.out),'฿'+fmtAmt(v.in),'<span style="color:'+colr(v.out-v.in)+'">'+signedBaht(v.out-v.in)+'</span>'])).join(''));
+    tbl(['พอร์ต','ถอนออก','ฝากเข้า','สุทธิ (ถอน − ฝาก)'], [['Forex',st.pf.forex],['TFEX + SET',st.pf.tfex],['US Stock',st.pf.us||{out:0,in:0}]].map(([n,v])=>R([n,'฿'+fmtAmt(v.out),'฿'+fmtAmt(v.in),'<span style="color:'+colr(v.out-v.in)+'">'+signedBaht(v.out-v.in)+'</span>'])).join(''));
 
   // รายการทั้งหมดของปี (อ่านอย่างเดียว, ดึงจากข้อมูลจริง)
   const yTx = txns.filter(t=>t.date.slice(0,4)===y).sort((p,q)=>p.date.localeCompare(q.date));
@@ -1492,7 +1500,7 @@ function exportYearToExcel(year){
   ys.cats.forEach(c=> aoa5.push([c.name, c.amount]));
   aoa5.push([]);
   aoa5.push(['พอร์ตเทรด','ถอนออก','ฝากเข้า','สุทธิ (ถอน − ฝาก)']);
-  [['Forex', ys.pf.forex], ['TFEX', ys.pf.tfex]].forEach(([n,v])=> aoa5.push([n, v.out, v.in, v.out-v.in]));
+  [['Forex', ys.pf.forex], ['TFEX + SET', ys.pf.tfex], ['US Stock', ys.pf.us||{out:0,in:0}]].forEach(([n,v])=> aoa5.push([n, v.out, v.in, v.out-v.in]));
   const ws5 = XLSX.utils.aoa_to_sheet(aoa5);
 
   const wb = XLSX.utils.book_new();
