@@ -1399,6 +1399,8 @@ function brandLoad(img){
 // ไอคอนของบัญชี/พอร์ต: crypto = Bitcoin, แบงก์/SET/TFEX = โลโก้, อื่น ๆ = ตัวอักษรย่อในกล่องสี
 function brandIcon(name, bg, ini, isCrypto){
   if(isCrypto) return '<div class="acc-icon btc">'+BTC_SVG+'</div>';
+  const kb = /^\s*k\s*-?\s*bank\s*(\d+)?/i.exec(name||'');   // KBank → ตัว K ขาวบนพื้นเขียว (K1, K2)
+  if(kb) return '<div class="acc-icon" style="background:#138F2D;">K'+(kb[1]||'')+'</div>';
   const br = brandOf(name);
   if(br){ const src = brandSources(br);
     return '<img class="acc-icon img" src="'+src[0]+'" data-src="'+esc(JSON.stringify(src))+'" data-n="0" data-bg="'+esc(bg)+'" data-ini="'+esc(ini)+'" alt="" onload="brandLoad(this)" onerror="brandErr(this)">'; }
