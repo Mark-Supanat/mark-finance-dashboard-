@@ -138,6 +138,13 @@
   .acc-list{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
   .acc-card{border:1px solid var(--border);border-radius:12px;padding:14px;}
   .acc-top{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
+  .acc-chips{display:flex;flex-wrap:wrap;gap:8px;}
+  .acc-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 7px;border:1px solid var(--border);border-radius:12px;background:var(--bg);font-size:13px;cursor:pointer;color:var(--text);}
+  .acc-chip.on{border-color:var(--blue);background:var(--blue-soft);font-weight:700;}
+  .acc-chip.none{padding:6px 12px;color:var(--muted);}
+  .mini .acc-icon{width:22px;height:22px;font-size:9px;border-radius:6px;}
+  .mini-i{display:inline-flex;vertical-align:middle;}
+  .mini-i .acc-icon{width:16px;height:16px;font-size:7px;border-radius:4px;}
   .acc-icon{width:30px;height:30px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;}
   .acc-icon.img{background:#fff;border:1px solid var(--border);padding:3px;object-fit:contain;}
   .acc-icon svg{width:100%;height:100%;display:block;}
@@ -378,7 +385,7 @@
             <div><label class="field-label">หมายเหตุ</label><input type="text" id="fNote" placeholder="เช่น ข้าวเยง"></div>
           </div>
           <div class="form-row" id="accountField">
-            <div style="flex:1;"><label class="field-label" id="fAccountLabel">จ่ายจากบัญชี</label><select id="fAccount"></select></div>
+            <div style="flex:1;"><label class="field-label" id="fAccountLabel">จ่ายจากบัญชี</label><select id="fAccount" style="display:none;"></select><div id="fAccountChips" class="acc-chips"></div></div>
           </div>
           <div class="form-row" id="transferFields" style="display:none;">
             <div><label class="field-label">จากบัญชี</label><select id="fFrom"></select></div>
@@ -1262,6 +1269,14 @@ function openNwForm(mode){
   };
 }
 
+/* จำว่าผู้ใช้เปิด/ปิดกล่องไหนไว้ (หน้า Action) — รีเฟรชแล้วคงเดิม */
+['monthListDetails','monthSummaryDetails'].forEach(id=>{
+  const el = document.getElementById(id); if(!el) return;
+  const key = 'open_'+id;
+  try{ const v = localStorage.getItem(key); if(v==='1') el.open = true; else if(v==='0') el.open = false; }catch(e){}
+  el.addEventListener('toggle', ()=>{ try{ localStorage.setItem(key, el.open?'1':'0'); }catch(e){} });
+});
+
 /* ---------- NAV ---------- */
 document.querySelectorAll('.nav-item').forEach(item=>{
   item.addEventListener('click', ()=>{
@@ -1510,9 +1525,16 @@ function fillTxAccount(){
   const sel = document.getElementById('fAccount'); if(!sel) return;
   const cur = sel.value;
   sel.innerHTML = accounts.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>').join('') + '<option value="">ไม่ระบุ (ไม่ตัดยอด)</option>';
-  if(cur !== '' && accounts.some(a=>a.id===cur)) sel.value = cur; else applyTxAccDefault();
+  if(cur !== '' && accounts.some(a=>a.id===cur)){ sel.value = cur; renderTxAccChips(); } else applyTxAccDefault();
 }
-function applyTxAccDefault(){ const sel = document.getElementById('fAccount'); if(sel && accounts.length) sel.value = txAccDefault(); }
+function applyTxAccDefault(){ const sel = document.getElementById('fAccount'); if(sel && accounts.length) sel.value = txAccDefault(); renderTxAccChips(); }
+function accIconHtml(a){ return brandIcon(a.name,'var(--'+a.color+')',a.name.slice(0,2).toUpperCase(),false); }
+function renderTxAccChips(){
+  const wrap = document.getElementById('fAccountChips'), sel = document.getElementById('fAccount'); if(!wrap||!sel) return;
+  wrap.innerHTML = accounts.map(a=>'<button type="button" class="acc-chip mini'+(sel.value===a.id?' on':'')+'" data-acc="'+esc(a.id)+'">'+accIconHtml(a)+'<span>'+esc(a.name)+'</span></button>').join('') +
+    '<button type="button" class="acc-chip none'+(sel.value===''?' on':'')+'" data-acc="">ไม่ระบุ (ไม่ตัดยอด)</button>';
+  wrap.querySelectorAll('.acc-chip').forEach(b=>b.onclick=()=>{ sel.value = b.dataset.acc; renderTxAccChips(); });
+}
 function saveTxAccDefault(accId){ try{ const o = JSON.parse(localStorage.getItem('txAccDefaults')||'{}'); o[txAccKey()] = accId; localStorage.setItem('txAccDefaults', JSON.stringify(o)); }catch(e){} }
 function bumpAccBalance(accId, type, amount, sign){
   const a = accounts.find(x=>x.id===accId); if(!a) return;
@@ -1556,6 +1578,7 @@ function startEditTx(id){
   document.getElementById('fCategory').value = t.category;
   document.getElementById('fNote').value = t.note || '';
   document.getElementById('fAccount').value = t.accountId || '';
+  renderTxAccChips();
   document.getElementById('submitBtn').textContent = 'อัปเดตรายการ';
   document.getElementById('cancelEditBtn').style.display = 'block';
   document.getElementById('typeToggle').style.opacity = '.5';
@@ -2218,7 +2241,7 @@ async function deleteTransferWithReverse(id){
 function renderMonthPanel(key){
   const panel = document.getElementById('monthPanel');
   const items = [
-    ...txns.filter(t=>monthKey(t.date)===key).map(t=>({date:t.date,type:t.type,amount:t.amount,label:esc(t.note||'-')+' · '+esc(t.category)+(t.accountId?' <span class="hold-sub" style="white-space:nowrap;">· '+esc(accName(t.accountId))+'</span>':''),id:t.id,src:'tx'})),
+    ...txns.filter(t=>monthKey(t.date)===key).map(t=>({date:t.date,type:t.type,amount:t.amount,label:esc(t.note||'-')+' · '+esc(t.category)+(t.accountId?' <span class="hold-sub" style="white-space:nowrap;">· <span class="mini-i">'+(accounts.find(x=>x.id===t.accountId)?accIconHtml(accounts.find(x=>x.id===t.accountId)):'')+'</span> '+esc(accName(t.accountId))+'</span>':''),id:t.id,src:'tx'})),
     ...transfers.filter(t=>monthKey(t.date)===key).map(t=>({date:t.date,type:'โอน',amount:t.amount,label:'โอน '+esc(accName(t.from))+' → '+esc(accName(t.to)),id:t.id,src:'trf'}))
   ].sort((a,b)=>a.date.localeCompare(b.date));
 
