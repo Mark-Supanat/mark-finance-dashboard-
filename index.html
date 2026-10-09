@@ -64,7 +64,7 @@
   .stat-k{font-size:12px;color:var(--muted);}
   .stat-v{font-size:21px;font-weight:700;margin-top:2px;}
   .stat-chg{font-size:11px;padding:2px 7px;border-radius:20px;font-weight:600;}
-  .nw-chg{display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:none;padding:0;}
+  .nw-chg{display:inline-flex;text-align:left;flex-wrap:wrap;align-items:center;gap:4px;margin-top:6px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:none;padding:0;}
   .nw-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;}
   .nw-row:last-child{border-bottom:none;}
   .stat-chg.up{background:var(--income-soft);color:var(--income);}
@@ -1038,7 +1038,7 @@ function applyHideAmt(hide, rerender){
 
 
 /* ---------- NET WORTH รายวัน (เทียบกับเมื่อวาน) ---------- */
-let nwLog = [], nwReady = false, nwOpen = false, nwSaveTimer = null;
+let nwLog = [], nwReady = false, nwOpen = false, nwSaveTimer = null, nwBase = null, nwBaseReady = false, nwMode = 'yday';
 const NW_KEYS = ['thai_stock','tfex','mega_stock','forex','crypto'];
 async function loadNetworth(){
   try{
@@ -1047,6 +1047,14 @@ async function loadNetworth(){
       .sort((a,b)=>a.day.localeCompare(b.day));
     nwReady = true;
   }catch(e){ console.warn('app_networth_daily:', e); nwLog = []; nwReady = false; }
+  try{
+    const {data, error} = await sb.from('app_networth_baseline').select('*').limit(1);
+    if(error) throw error;
+    nwBaseReady = true;
+    const r = (data||[])[0];
+    nwBase = r ? {day:String(r.day).slice(0,10), accounts:Number(r.accounts), thai_stock:Number(r.thai_stock), tfex:Number(r.tfex), mega_stock:Number(r.mega_stock), forex:Number(r.forex), crypto:Number(r.crypto), total:Number(r.total)} : null;
+    if(nwBase) nwMode = 'base';
+  }catch(e){ console.warn('app_networth_baseline:', e); nwBase = null; nwBaseReady = false; }
 }
 function nwCurrent(){
   const cp = currentPortfolio || {};
@@ -1072,32 +1080,48 @@ async function saveNetworthSnapshot(){
   if(ex) Object.assign(ex, row); else { nwLog.push(row); nwLog.sort((a,b)=>a.day.localeCompare(b.day)); }
   refreshNwUi();
 }
-// เทียบกับภาพล่าสุดก่อนวันนี้ แล้วแยกว่าเปลี่ยนเพราะอะไร
-function nwCompare(){
-  if(!nwReady) return null;
+// เลือกภาพอ้างอิง แล้วแยกว่าเปลี่ยนเพราะอะไร (mode: yday | 7d | 30d | base)
+function nwRef(mode){
   const day = todayISO();
-  const prev = nwLog.filter(r=>r.day<day).pop();
-  if(!prev) return {first:true};
+  if(mode==='base') return nwBase ? {ref:nwBase, incl:true} : null;
+  const before = nwLog.filter(r=>r.day<day);
+  if(!before.length) return null;
+  if(mode==='yday') return {ref:before[before.length-1], incl:false};
+  const n = mode==='7d' ? 7 : 30;
+  const d = new Date(); d.setDate(d.getDate()-n);
+  const lim = d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());
+  const ok = before.filter(r=>r.day<=lim);
+  return {ref: ok.length ? ok[ok.length-1] : before[0], incl:false};
+}
+function nwCompare(mode){
+  if(!nwReady) return null;
+  mode = mode || nwMode;
+  let x = nwRef(mode);
+  if(!x && mode!=='yday'){ mode = 'yday'; x = nwRef(mode); }
+  if(!x) return {first:true};
+  const prev = x.ref, day = todayISO();
   const c = nwCurrent();
-  const dep = {};   // เงินที่โอนเข้า(+)/ออก(−)พอร์ตตั้งแต่วันหลังภาพก่อนหน้า ถึงวันนี้
+  const dep = {};   // เงินที่โอนเข้า(+)/ออก(−)พอร์ต นับตั้งแต่ภาพอ้างอิง ถึงวันนี้
   NW_KEYS.forEach(k=>dep[k]=0);
   const keyOf = {'Forex':'forex','TFEX':'tfex','S50':'tfex','MGO':'tfex','SET':'thai_stock','US Stock':'mega_stock'};
-  ptxns.filter(x=>x.date>prev.day && x.date<=day).forEach(x=>{ const k = keyOf[x.account]; if(k) dep[k] += Number(x.expense||0) - Number(x.income||0); });
+  ptxns.filter(t=>(x.incl ? t.date>=prev.day : t.date>prev.day) && t.date<=day).forEach(t=>{ const k = keyOf[t.account]; if(k) dep[k] += Number(t.expense||0) - Number(t.income||0); });
   const trade = {}; let totalDep = 0;
   NW_KEYS.forEach(k=>{ trade[k] = (c[k]-prev[k]) - dep[k]; totalDep += dep[k]; });
   const cashflow = (c.accounts-prev.accounts) + totalDep;
-  return {first:false, prev, c, cashflow, trade, delta:c.total-prev.total, totalDep};
+  return {first:false, mode, prev, c, cashflow, trade, delta:c.total-prev.total, totalDep, pct: prev.total ? (c.total-prev.total)/prev.total*100 : 0};
 }
 function nwDayLabel(iso){ return iso.slice(8,10)+'/'+iso.slice(5,7); }
+const NW_MODE_LABEL = {yday:'เมื่อวาน','7d':'7 วันก่อน','30d':'30 วันก่อน',base:'จุดเริ่มต้น'};
 function nwChgHtml(){
   const r = nwCompare();
   if(!nwReady) return '<div class="stat-sub" style="font-size:11px;color:var(--muted);margin-top:6px;">ยังไม่ได้รัน i1_networth_daily.sql</div>';
   if(!r) return '';
-  if(r.first) return '<div style="font-size:11.5px;color:var(--muted);margin-top:6px;">เริ่มจดภาพวันนี้ — เทียบกับเมื่อวานได้ตั้งแต่พรุ่งนี้</div>';
+  const setBtn = nwBaseReady ? '' : '';
+  if(r.first) return '<div style="font-size:11.5px;color:var(--muted);margin-top:6px;">เริ่มจดภาพวันนี้ — เทียบกับเมื่อวานได้ตั้งแต่พรุ่งนี้</div>'+(nwBaseReady?'<button type="button" class="nw-chg" id="nwChgBtn" style="color:var(--blue);">ตั้งจุดเริ่มต้น / อัปเดตยอด ›</button>':'');
   const up = r.delta>=0, col = Math.abs(r.delta)<0.005 ? 'var(--muted)' : (up?'var(--income)':'var(--expense)');
-  const yday = new Date(); yday.setDate(yday.getDate()-1);
-  const isY = r.prev.day === yday.getFullYear()+'-'+pad2(yday.getMonth()+1)+'-'+pad2(yday.getDate());
-  return '<button type="button" class="nw-chg" id="nwChgBtn" style="color:'+col+';">'+(up?'▲':'▼')+' '+(up?'+':'−')+'฿'+mAmt(Math.abs(r.delta))+' <span style="color:var(--muted);font-weight:500;">จาก'+(isY?'เมื่อวาน':' '+nwDayLabel(r.prev.day))+' ›</span></button>';
+  const pc = HIDE ? '' : ' ('+(up?'+':'−')+Math.abs(r.pct).toFixed(1)+'%)';
+  const lbl = 'จาก'+NW_MODE_LABEL[r.mode];
+  return '<button type="button" class="nw-chg" id="nwChgBtn" style="color:'+col+';">'+(up?'▲':'▼')+' '+(up?'+':'−')+'฿'+mAmt(Math.abs(r.delta))+pc+' <span style="color:var(--muted);font-weight:500;">'+lbl+' ›</span></button>';
 }
 function bindNwChg(){
   const b = document.getElementById('nwChgBtn');
@@ -1105,42 +1129,135 @@ function bindNwChg(){
   renderNwDetail();
 }
 function refreshNwUi(){
-  // อัปเดตเฉพาะส่วน Net Worth โดยไม่ต้องวาดหน้าใหม่ทั้งหมด
   const card = document.querySelector('#statGrid .stat-card');
-  if(card){ const old = card.querySelector('#nwChgBtn') || card.querySelector('.stat-v').nextElementSibling; if(old && old.className!=='stat-v'){ old.remove(); } card.insertAdjacentHTML('beforeend', nwChgHtml()); }
+  if(card){ const old = card.querySelector('#nwChgBtn'); const nxt = old ? old : card.querySelector('.stat-v').nextElementSibling; if(nxt && nxt.className!=='stat-v'){ nxt.remove(); } card.insertAdjacentHTML('beforeend', nwChgHtml()); }
   bindNwChg();
+}
+const NW_NAMES = {thai_stock:'หุ้นไทย (SET)', tfex:'TFEX', mega_stock:'US Stock / หุ้นเมกา+จีน', forex:'Forex', crypto:'คริปโต'};
+function nwWaterfall(r){
+  const steps = [{n:'ใช้จ่าย/บัญชี', v:r.cashflow}].concat(NW_KEYS.map(k=>({n:NW_NAMES[k].split(' ')[0].replace('US','US Stock'), v:r.trade[k], k}))).filter(x=>Math.abs(x.v)>=0.005);
+  const bars = [{n:'เริ่มต้น', t:'total', a:0, b:r.prev.total}];
+  let run = r.prev.total;
+  steps.forEach(s=>{ bars.push({n:s.n, t:'step', a:run, b:run+s.v, v:s.v}); run += s.v; });
+  bars.push({n:'ตอนนี้', t:'total', a:0, b:r.c.total});
+  const all = bars.flatMap(x=>[x.a,x.b]);
+  const hiReal = Math.max(...all), loReal = Math.min(...all);
+  // ตัดแกนไม่ให้เริ่มที่ 0 เพื่อให้เห็นการเปลี่ยนแปลง
+  const span = Math.max(hiReal-loReal, 1), lo = loReal - span*0.25, hi = hiReal + span*0.15;
+  const W = 600, H = 190, top = 14, bot = 34, bw = Math.min(70, (W/bars.length)*0.62);
+  const yy = v => top + (hi-v)/(hi-lo)*(H-top-bot);
+  let g = '';
+  bars.forEach((x,i)=>{
+    const cx = (i+0.5)*W/bars.length, y1 = yy(Math.max(x.a,x.b)), y2 = yy(Math.min(x.a,x.b));
+    const col = x.t==='total' ? '#98A2B3' : (x.v>=0 ? '#12B76A' : '#F04438');
+    g += '<rect x="'+(cx-bw/2).toFixed(1)+'" y="'+y1.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(2,y2-y1).toFixed(1)+'" rx="4" fill="'+col+'"/>';
+    const lab = HIDE ? MASK : (x.t==='total' ? fmtAmt(x.b) : (x.v<0?'−':'+')+fmtAmt(Math.abs(x.v)));
+    g += '<text x="'+cx.toFixed(1)+'" y="'+(y1-4).toFixed(1)+'" text-anchor="middle" font-size="11" font-weight="700" fill="'+(x.t==='total'?'#344054':col)+'">'+lab+'</text>';
+    g += '<text x="'+cx.toFixed(1)+'" y="'+(H-12)+'" text-anchor="middle" font-size="10" fill="#667085">'+x.n+'</text>';
+    if(i<bars.length-1){ const yl = yy(x.t==='total'?x.b:x.b); g += '<line x1="'+(cx+bw/2).toFixed(1)+'" x2="'+((i+1.5)*W/bars.length-bw/2).toFixed(1)+'" y1="'+yl.toFixed(1)+'" y2="'+yl.toFixed(1)+'" stroke="#D0D5DD" stroke-dasharray="3 3"/>'; }
+  });
+  return '<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:640px;height:auto;display:block;margin:0 auto;">'+g+'</svg>';
+}
+function nwLineChart(){
+  let pts = nwLog.slice(-60).map(x=>({day:x.day, total:x.total}));
+  if(nwBase){ pts = pts.filter(p=>p.day>=nwBase.day); const i = pts.findIndex(p=>p.day>=nwBase.day); pts.splice(i<0?pts.length:i, 0, {day:nwBase.day, total:nwBase.total, base:true}); }
+  if(pts.length<2 || HIDE) return '';
+  const vs = pts.map(p=>p.total).concat(nwBase?[nwBase.total]:[]), mn = Math.min(...vs), mx = Math.max(...vs), w = 600, h = 80;
+  const y = v => h-8-(mx===mn?0.5:(v-mn)/(mx-mn))*(h-16);
+  const path = pts.map((p,i)=>(i?'L':'M')+(i/(pts.length-1)*w).toFixed(1)+' '+y(p.total).toFixed(1)).join(' ');
+  const baseLine = nwBase ? '<line x1="0" x2="'+w+'" y1="'+y(nwBase.total).toFixed(1)+'" y2="'+y(nwBase.total).toFixed(1)+'" stroke="#98A2B3" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>' : '';
+  return '<div style="margin-top:14px;"><div class="hold-sub" style="margin-bottom:4px;">Net Worth ตามเวลา ('+nwDayLabel(pts[0].day)+' – '+nwDayLabel(pts[pts.length-1].day)+')'+(nwBase?' · เส้นประ = จุดเริ่มต้น':'')+'</div>'+
+    '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" style="width:100%;height:80px;display:block;background:var(--bg);border-radius:10px;">'+baseLine+'<path d="'+path+'" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>'+
+    '<div class="hold-sub" style="display:flex;justify-content:space-between;margin-top:4px;"><span>ต่ำสุด ฿'+fmtAmt(mn)+'</span><span>สูงสุด ฿'+fmtAmt(mx)+'</span></div></div>';
 }
 function renderNwDetail(){
   const el = document.getElementById('nwDetail'); if(!el) return;
+  if(!nwOpen || !nwReady){ el.innerHTML = ''; return; }
   const r = nwCompare();
-  if(!nwOpen || !r || r.first){ el.innerHTML = ''; return; }
   const sg = n => (HIDE ? MASK : (n<0?'−':'+')+'฿'+fmtAmt(Math.abs(n)));
   const col = n => Math.abs(n)<0.005 ? 'var(--muted)' : (n<0?'var(--expense)':'var(--income)');
-  const names = {thai_stock:'หุ้นไทย (SET)', tfex:'TFEX', mega_stock:'US Stock / หุ้นเมกา+จีน', forex:'Forex', crypto:'คริปโต'};
-  const rows = [['รายรับ/รายจ่าย และยอดบัญชีอื่น ๆ', r.cashflow]].concat(NW_KEYS.map(k=>['ผลเทรด/มูลค่าพอร์ต '+names[k], r.trade[k]])).filter((x,i)=>i===0 || Math.abs(x[1])>=0.005 || Math.abs(r.c[NW_KEYS[i-1]])>0);
-  const pts = nwLog.slice(-30);
-  let spark = '';
-  if(pts.length>=2 && !HIDE){
-    const vs = pts.map(x=>x.total), mn = Math.min(...vs), mx = Math.max(...vs), w = 600, h = 70;
-    const xy = (x,i)=>[(i/(pts.length-1)*w), (h-6-(mx===mn?0.5:(x.total-mn)/(mx-mn))*(h-12))];
-    const path = pts.map((x,i)=>{ const p=xy(x,i); return (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1); }).join(' ');
-    const lp = xy(pts[pts.length-1], pts.length-1);
-    spark = '<div style="margin-top:12px;"><div class="hold-sub" style="margin-bottom:4px;">Net Worth '+pts.length+' วันล่าสุด ('+nwDayLabel(pts[0].day)+' – '+nwDayLabel(pts[pts.length-1].day)+')</div>'+
-      '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" style="width:100%;height:70px;display:block;background:var(--bg,#f6f8fb);border-radius:10px;"><path d="'+path+'" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>'+
-      '<div class="hold-sub" style="display:flex;justify-content:space-between;margin-top:4px;"><span>ต่ำสุด ฿'+fmtAmt(mn)+'</span><span>สูงสุด ฿'+fmtAmt(mx)+'</span></div></div>';
-  }el.innerHTML = '<div class="card" style="margin-top:-6px;"><h3>เปลี่ยนแปลงจาก'+(r.prev.day===todayISO()?'':' ภาพวันที่ '+nwDayLabel(r.prev.day))+' <span class="sub">รวม <b style="color:'+col(r.delta)+'">'+sg(r.delta)+'</b></span></h3>' +
-    rows.map(x=>'<div class="nw-row"><span>'+x[0]+'</span><b style="color:'+col(x[1])+'">'+sg(x[1])+'</b></div>').join('') +
-    (Math.abs(r.totalDep)>=0.005 ? '<div class="hold-sub" style="margin-top:8px;">เงินที่โอนเข้า/ออกพอร์ตช่วงนี้ ('+(HIDE?MASK:(r.totalDep>=0?'+':'−')+'฿'+fmtAmt(Math.abs(r.totalDep)))+') หักออกจากผลเทรดแล้ว — ไม่นับเป็นกำไร/ขาดทุน</div>' : '') +
-    '<div class="hold-sub" style="margin-top:6px;">ยอดพอร์ตมาจากตัวเลขที่คุณกรอกเอง — ผลเทรดจะขึ้นหลังอัปเดตยอดพอร์ต</div>' + spark + '</div>';
+  const modes = ['yday','7d','30d'].concat(nwBase?['base']:[]);
+  const chips = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px;">'+modes.map(m=>'<button type="button" data-nwmode="'+m+'" class="small-btn" style="padding:6px 12px;'+((r&&r.mode===m)?'background:var(--blue);color:#fff;border-color:var(--blue);':'')+'">เทียบ'+NW_MODE_LABEL[m]+'</button>').join('')+'</div>';
+  const btns = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;"><button type="button" class="small-btn" id="nwUpdBtn" style="padding:8px 14px;">✏️ อัปเดตยอดประจำสัปดาห์</button>'+(nwBaseReady?'<button type="button" class="small-btn" id="nwBaseBtn" style="padding:8px 14px;">📍 '+(nwBase?'แก้':'ตั้ง')+'จุดเริ่มต้น</button>':'<span class="hold-sub">(ตั้งจุดเริ่มต้นได้หลังรัน i2_networth_baseline.sql)</span>')+'</div>';
+  let body;
+  if(!r || r.first){
+    body = '<div class="hold-sub" style="margin:8px 0;">ยังไม่มีภาพก่อนหน้าให้เทียบ — ตั้งจุดเริ่มต้น หรือรอพรุ่งนี้</div>';
+  } else {
+    const rows = [['รายรับ/รายจ่าย และยอดบัญชีอื่น ๆ', r.cashflow]].concat(NW_KEYS.map(k=>['ผลเทรด/มูลค่าพอร์ต '+NW_NAMES[k], r.trade[k]])).filter((x,i)=>i===0||Math.abs(x[1])>=0.005||Math.abs(r.c[NW_KEYS[i-1]])>0||Math.abs(r.prev[NW_KEYS[i-1]])>0);
+    body = '<h3 style="margin:0;">'+(r.mode==='base'?'จากจุดเริ่มต้น ('+nwDayLabel(r.prev.day)+') ฿'+mAmt(r.prev.total):'เปลี่ยนแปลงจากภาพวันที่ '+nwDayLabel(r.prev.day))+' <span class="sub">รวม <b style="color:'+col(r.delta)+'">'+sg(r.delta)+(HIDE?'':' ('+(r.pct>=0?'+':'−')+Math.abs(r.pct).toFixed(1)+'%)')+'</b></span></h3>'+ chips +
+      nwWaterfall(r) +
+      '<div style="margin-top:8px;">'+rows.map(x=>'<div class="nw-row"><span>'+x[0]+'</span><b style="color:'+col(x[1])+'">'+sg(x[1])+'</b></div>').join('')+'</div>'+
+      (Math.abs(r.totalDep)>=0.005 ? '<div class="hold-sub" style="margin-top:8px;">เงินที่โอนเข้า/ออกพอร์ตช่วงนี้ ('+(HIDE?MASK:(r.totalDep>=0?'+':'−')+'฿'+fmtAmt(Math.abs(r.totalDep)))+') หักออกจากผลเทรดแล้ว — ไม่นับเป็นกำไร/ขาดทุน</div>' : '') +
+      '<div class="hold-sub" style="margin-top:6px;">ยอดพอร์ตมาจากตัวเลขที่คุณกรอกเอง — ผลเทรดจะขึ้นหลังอัปเดตยอดพอร์ต</div>';
+  }
+  el.innerHTML = '<div class="card" style="margin-top:-6px;">'+body+nwLineChart()+btns+'</div>';
+  el.querySelectorAll('[data-nwmode]').forEach(b=>b.onclick=()=>{ nwMode=b.dataset.nwmode; refreshNwUi(); });
+  const u = document.getElementById('nwUpdBtn'); if(u) u.onclick = ()=>openNwForm('update');
+  const bb = document.getElementById('nwBaseBtn'); if(bb) bb.onclick = ()=>openNwForm('base');
 }
 
-/* จำว่าผู้ใช้เปิด/ปิดกล่องไหนไว้ (หน้า Action) */
-['monthListDetails','monthSummaryDetails'].forEach(id=>{
-  const el = document.getElementById(id); if(!el) return;
-  const key = 'open_'+id;
-  try{ const v = localStorage.getItem(key); if(v==='1') el.open = true; else if(v==='0') el.open = false; }catch(e){}
-  el.addEventListener('toggle', ()=>{ try{ localStorage.setItem(key, el.open?'1':'0'); }catch(e){} });
-});
+/* ฟอร์มอัปเดตยอด / ตั้งจุดเริ่มต้น */
+function openNwForm(mode){
+  const old = document.getElementById('nwModal'); if(old) old.remove();
+  const isBase = mode==='base';
+  const c = nwCurrent();
+  const seed = nwBase || {day:todayISO(), accounts:58427, thai_stock:0, tfex:15000, mega_stock:40000, forex:5280, crypto:0};
+  const inp = (id,label,val)=>'<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;font-size:13px;"><span>'+label+'</span><input type="number" step="any" id="'+id+'" value="'+val+'" style="width:140px;text-align:right;padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:var(--bg);"></label>';
+  let fields = '';
+  if(isBase){
+    fields += '<label style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;"><span>วันที่เริ่มต้น</span><input type="date" id="nwf_day" value="'+seed.day+'" style="padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:var(--bg);"></label>';
+    fields += inp('nwf_accounts','ยอดบัญชีรวมทั้งหมด',seed.accounts);
+    NW_KEYS.forEach(k=>{ fields += inp('nwf_'+k, NW_NAMES[k], seed[k]); });
+  } else {
+    accounts.forEach(a=>{ fields += inp('nwa_'+a.id, a.name, a.balance); });
+    fields += '<div style="height:8px;border-bottom:1px solid var(--border);margin-bottom:6px;"></div>';
+    NW_KEYS.forEach(k=>{ fields += inp('nwf_'+k, NW_NAMES[k], c[k]); });
+  }
+  const m = document.createElement('div');
+  m.id = 'nwModal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(16,24,40,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  m.innerHTML = '<div style="background:var(--card);border-radius:16px;padding:20px;width:100%;max-width:420px;max-height:90vh;overflow:auto;"><h3 style="margin:0 0 4px;">'+(isBase?'📍 ตั้งจุดเริ่มต้น Net Worth':'✏️ อัปเดตยอดประจำสัปดาห์')+'</h3><div class="hold-sub" style="margin-bottom:10px;">'+(isBase?'กรอกยอดตอนเริ่มต้น แล้วเว็บจะเทียบกับยอดปัจจุบันให้ (ค่าตั้งต้นมาจากตัวเลข ฿118,707 ที่คุณให้ — แก้ได้)':'แก้เฉพาะช่องที่เปลี่ยน แล้วกดบันทึก — ยอดบัญชี/พอร์ตและภาพ Net Worth ของวันนี้จะอัปเดตพร้อมกัน')+'</div>'+fields+
+    '<div id="nwfTotal" style="font-weight:700;margin:12px 0;"></div><div id="nwfErr" style="color:var(--expense);font-size:12px;"></div>'+
+    '<div style="display:flex;gap:8px;"><button type="button" class="small-btn" id="nwfCancel" style="flex:1;padding:10px;">ยกเลิก</button><button type="button" class="submit" id="nwfSave" style="flex:2;">บันทึก</button></div></div>';
+  document.body.appendChild(m);
+  const num = id=>parseFloat(document.getElementById(id).value)||0;
+  const upd = ()=>{ let t = NW_KEYS.reduce((a,k)=>a+num('nwf_'+k),0); t += isBase ? num('nwf_accounts') : accounts.reduce((a,x)=>a+num('nwa_'+x.id),0); document.getElementById('nwfTotal').textContent = 'Net Worth รวม ฿'+fmtAmt(t); };
+  m.querySelectorAll('input').forEach(i=>i.addEventListener('input',upd)); upd();
+  document.getElementById('nwfCancel').onclick = ()=>m.remove();
+  m.addEventListener('click', e=>{ if(e.target===m) m.remove(); });
+  document.getElementById('nwfSave').onclick = async ()=>{
+    const err = document.getElementById('nwfErr'), btn = document.getElementById('nwfSave');
+    btn.disabled = true; err.textContent = '';
+    try{
+      if(isBase){
+        const day = document.getElementById('nwf_day').value || todayISO();
+        const {error} = await sb.rpc('app_set_networth_baseline', {p_day:day, p_accounts:num('nwf_accounts'), p_thai:num('nwf_thai_stock'), p_tfex:num('nwf_tfex'), p_mega:num('nwf_mega_stock'), p_forex:num('nwf_forex'), p_crypto:num('nwf_crypto')});
+        if(error) throw new Error(error.message);
+        nwBase = {day, accounts:num('nwf_accounts'), total:0};
+        NW_KEYS.forEach(k=>nwBase[k]=num('nwf_'+k));
+        nwBase.total = nwBase.accounts + NW_KEYS.reduce((a,k)=>a+nwBase[k],0);
+        nwMode = 'base'; nwOpen = true;
+      } else {
+        for(const a of accounts){
+          const v = num('nwa_'+a.id);
+          if(Math.abs(v-Number(a.balance||0))>0.0001){ const {error} = await sb.from('app_accounts').update({balance:v}).eq('id',a.id); if(error) throw new Error(error.message); a.balance = v; }
+        }
+        const patch = {};
+        NW_KEYS.forEach(k=>{ const v = num('nwf_'+k); if(Math.abs(v-Number(currentPortfolio[k]||0))>0.0001){ patch[k]=v; currentPortfolio[k]=v; } });
+        if(Object.keys(patch).length){
+          currentPortfolio.total = OVERVIEW_ASSET_DEFS.reduce((s,d)=>s+Number(currentPortfolio[d.key]||0),0);
+          patch.total = currentPortfolio.total;
+          const {error} = await sb.from('app_portfolio_current').update(patch).eq('id','current'); if(error) throw new Error(error.message);
+        }
+        nwOpen = true;
+      }
+      m.remove();
+      renderOverview();
+      await saveNetworthSnapshot();
+      refreshNwUi();
+    }catch(e){ err.textContent = 'บันทึกไม่สำเร็จ: '+e.message; btn.disabled = false; }
+  };
+}
 
 /* ---------- NAV ---------- */
 document.querySelectorAll('.nav-item').forEach(item=>{
