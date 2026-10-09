@@ -188,6 +188,12 @@
   .tab.closed{border-bottom:3px double var(--expense);}
   .tab.active{background:var(--card);color:var(--text);}
   .tab.active:not(.closed){border-bottom:2px solid var(--blue);}
+  .q-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+  @media(max-width:640px){.q-grid{grid-template-columns:1fr;}}
+  #tabs .tab{border-bottom:1px solid var(--border);border-radius:8px;top:0;}
+  #tabs .tab.closed{border-bottom:3px double var(--expense);}
+  #tabs .tab.active{background:var(--card);color:var(--text);border-color:var(--blue);}
+  #tabs .tab.active.closed{border-bottom:3px double var(--expense);}
   .month-panel{border:1px solid var(--border);border-radius:0 10px 10px 10px;padding:16px;}
   table.tx{width:100%;border-collapse:collapse;font-size:12.5px;}
   table.tx th{text-align:left;font-weight:600;color:var(--muted);font-size:10.5px;padding:0 4px 8px;border-bottom:1px solid var(--border);}
@@ -390,7 +396,7 @@
         </form>
       </div>
 
-      <details class="card">
+      <details class="card" id="monthListDetails">
         <summary class="card-summary">รายการประจำเดือน <span class="sub">แตะเพื่อดูรายการรายวัน</span></summary>
         <div style="margin-top:14px;">
           <div class="tabs" id="tabs"></div>
@@ -398,10 +404,10 @@
         </div>
       </details>
 
-      <div class="card">
-        <h3>สรุปรายเดือน <span class="sub" id="monthlySummaryYearLabel">2026</span></h3>
-        <div id="monthlySummaryTable"></div>
-      </div>
+      <details class="card" id="monthSummaryDetails" open>
+        <summary class="card-summary">สรุปรายเดือน <span class="sub" id="monthlySummaryYearLabel">2026</span></summary>
+        <div id="monthlySummaryTable" style="margin-top:10px;"></div>
+      </details>
       <div class="grid2">
         <div class="card">
           <h3>สรุปรายจ่ายตามหมวดหมู่ <span class="sub">ทั้งปี</span></h3>
@@ -1127,6 +1133,14 @@ function renderNwDetail(){
     (Math.abs(r.totalDep)>=0.005 ? '<div class="hold-sub" style="margin-top:8px;">เงินที่โอนเข้า/ออกพอร์ตช่วงนี้ ('+(HIDE?MASK:(r.totalDep>=0?'+':'−')+'฿'+fmtAmt(Math.abs(r.totalDep)))+') หักออกจากผลเทรดแล้ว — ไม่นับเป็นกำไร/ขาดทุน</div>' : '') +
     '<div class="hold-sub" style="margin-top:6px;">ยอดพอร์ตมาจากตัวเลขที่คุณกรอกเอง — ผลเทรดจะขึ้นหลังอัปเดตยอดพอร์ต</div>' + spark + '</div>';
 }
+
+/* จำว่าผู้ใช้เปิด/ปิดกล่องไหนไว้ (หน้า Action) */
+['monthListDetails','monthSummaryDetails'].forEach(id=>{
+  const el = document.getElementById(id); if(!el) return;
+  const key = 'open_'+id;
+  try{ const v = localStorage.getItem(key); if(v==='1') el.open = true; else if(v==='0') el.open = false; }catch(e){}
+  el.addEventListener('toggle', ()=>{ try{ localStorage.setItem(key, el.open?'1':'0'); }catch(e){} });
+});
 
 /* ---------- NAV ---------- */
 document.querySelectorAll('.nav-item').forEach(item=>{
@@ -1951,26 +1965,31 @@ function renderTabs(keys){
     else quarters['Q4'].push(k);
   });
 
-  ['อื่นๆ','Q1','Q2','Q3','Q4'].forEach(qname=>{
+  const mkBtn = k=>{
+    const btn = document.createElement('div');
+    btn.className='tab'+(k===activeMonth?' active':'')+(k<cur?' closed':'');
+    btn.textContent = monthLabel(k);
+    btn.onclick = ()=>{ activeMonth=k; renderTabs(keys); renderMonthPanel(k); };
+    return btn;
+  };
+  const mkQ = qname=>{
     const qkeys = quarters[qname];
-    if(qkeys.length===0) return;
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap;';
+    const box = document.createElement('div');
+    box.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 10px;background:var(--bg,#f6f8fb);border-radius:12px;';
     if(qname!=='อื่นๆ'){
-      const qLabel = document.createElement('span');
-      qLabel.textContent = qname;
-      qLabel.style.cssText = 'font-size:10.5px;font-weight:700;color:var(--muted);width:22px;flex-shrink:0;';
-      row.appendChild(qLabel);
+      const l = document.createElement('span');
+      l.textContent = qname;
+      l.style.cssText = 'font-size:11px;font-weight:800;color:var(--muted);width:24px;flex-shrink:0;';
+      box.appendChild(l);
     }
-    qkeys.forEach(k=>{
-      const btn = document.createElement('div');
-      btn.className='tab'+(k===activeMonth?' active':'')+(k<cur?' closed':'');
-      btn.textContent = monthLabel(k);
-      btn.onclick = ()=>{ activeMonth=k; renderTabs(keys); renderMonthPanel(k); };
-      row.appendChild(btn);
-    });
-    tabsEl.appendChild(row);
-  });
+    qkeys.forEach(k=>box.appendChild(mkBtn(k)));
+    return box;
+  };
+  if(quarters['อื่นๆ'].length){ const o = mkQ('อื่นๆ'); o.style.marginBottom='8px'; tabsEl.appendChild(o); }
+  const grid = document.createElement('div');
+  grid.className = 'q-grid';
+  ['Q1','Q2','Q3','Q4'].forEach(q=>{ if(quarters[q].length) grid.appendChild(mkQ(q)); });
+  tabsEl.appendChild(grid);
 }
 function negativeWarnings(from, to, amount){
   const w = [];
