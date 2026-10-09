@@ -100,6 +100,8 @@
   .hold-val{text-align:right;font-size:14px;}
   .hold-pl{text-align:right;min-width:92px;font-size:13px;}
   .hold-sub{font-size:11px;color:var(--muted);font-weight:400;}
+  .hold-x{flex-shrink:0;font-size:18px;line-height:1;padding:4px 8px;border-radius:8px;}
+  .hold-x:hover{background:var(--expense-soft);color:var(--expense);}
   .hold-detail{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-top:10px;padding:12px;background:var(--bg);border-radius:10px;}
   .hold-detail input{padding:6px 8px;font-size:13px;}
   .hold-k{font-size:11px;color:var(--muted);margin-bottom:3px;}
@@ -903,7 +905,8 @@ function renderHoldings(){
           '<div class="hold-main" data-toggle="'+esc(h.id)+'">' + holdLogoHtml(h) +
             '<div class="hold-name"><b>'+esc(h.symbol)+'</b><div class="hold-sub">◔ '+w.toFixed(1)+'%'+(h.dayPct!==null&&h.dayPct!==undefined?' · ตลาด '+pctChip(h.dayPct):'')+'</div></div>' +
             '<div class="hold-val"><b>'+(c.ccy==='USD'?mFx(c.value):mAmt(c.value))+'</b>'+(c.ccy==='USD'?'<div class="hold-sub">≈ '+mAmt(c.thb)+' THB</div>':'<div class="hold-sub">บาท</div>')+'</div>' +
-            '<div class="hold-pl">'+(c.plPct===null?'<span class="hold-sub">ยังไม่มีต้นทุน</span>':pctChip(c.plPct)+'<div style="font-size:11.5px;color:'+plColor+';">('+(c.pl<0?'−':'+')+(HIDE?MASK:fmt2(Math.abs(c.pl)))+' '+(c.ccy==='USD'?'USD':'')+')</div>')+'</div></div>' +
+            '<div class="hold-pl">'+(c.plPct===null?'<span class="hold-sub">ยังไม่มีต้นทุน</span>':pctChip(c.plPct)+'<div style="font-size:11.5px;color:'+plColor+';">('+(c.pl<0?'−':'+')+(HIDE?MASK:fmt2(Math.abs(c.pl)))+' '+(c.ccy==='USD'?'USD':'')+')</div>')+'</div>' +
+            '<button type="button" class="del-btn hold-x" data-hdel="'+esc(h.id)+'" title="ลบ '+esc(h.symbol)+'">×</button></div>' +
           (open ? '<div class="hold-detail">' +
             '<div><div class="hold-k">จำนวนหุ้นคงเหลือ</div>'+(HIDE?'<div>'+MASK+'</div>':'<input type="number" step="any" value="'+(h.qty||'')+'" data-f="qty" data-hid="'+esc(h.id)+'" placeholder="0">')+'</div>' +
             '<div><div class="hold-k">ราคา ('+cur+') และ % เปลี่ยน 1 วัน</div>'+(HIDE?'<div>'+MASK+'</div>':'<input type="number" step="any" value="'+(h.price||'')+'" data-f="price" data-hid="'+esc(h.id)+'" placeholder="ราคาล่าสุด">')+'<div class="hold-sub" style="margin-top:3px;">'+(h.dayPct!==null&&h.dayPct!==undefined?pctChip(h.dayPct):'<span>ยังไม่มีข้อมูลตลาด</span>')+'</div></div>' +
@@ -959,7 +962,8 @@ function renderHoldings(){
     });
   });
   el.querySelectorAll('[data-hdel]').forEach(b=>{
-    b.onclick = async ()=>{
+    b.onclick = async (ev)=>{
+      ev.stopPropagation();
       const h = holdings.find(x=>x.id===b.dataset.hdel); if(!h) return;
       if(!confirm('ลบ '+h.symbol+' ออกจากรายการ?')) return;
       const {error} = await sb.from('app_holdings').delete().eq('id', h.id);
