@@ -64,6 +64,9 @@
   .stat-k{font-size:12px;color:var(--muted);}
   .stat-v{font-size:21px;font-weight:700;margin-top:2px;}
   .stat-chg{font-size:11px;padding:2px 7px;border-radius:20px;font-weight:600;}
+  .nw-chg{display:inline-flex;align-items:center;gap:4px;margin-top:6px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:none;padding:0;}
+  .nw-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .nw-row:last-child{border-bottom:none;}
   .stat-chg.up{background:var(--income-soft);color:var(--income);}
   .stat-chg.down{background:var(--expense-soft);color:var(--expense);}
 
@@ -297,6 +300,7 @@
     <!-- OVERVIEW -->
     <div class="view active" id="view-overview">
       <div class="stat-grid" id="statGrid"></div>
+      <div id="nwDetail"></div>
 
       <div class="grid2 eq">
         <div class="card">
@@ -730,6 +734,7 @@ async function init(){
   await loadArchives();
   await loadReserveLog();
   await loadHoldings();
+  await loadNetworth();
   activeMonth = todayISO().slice(0,7);
   selectedYear = Number(todayISO().slice(0,4));
   selectedPfYear = selectedYear;
@@ -1025,6 +1030,101 @@ function applyHideAmt(hide, rerender){
   });
 })();
 
+
+/* ---------- NET WORTH รายวัน (เทียบกับเมื่อวาน) ---------- */
+let nwLog = [], nwReady = false, nwOpen = false, nwSaveTimer = null;
+const NW_KEYS = ['thai_stock','tfex','mega_stock','forex','crypto'];
+async function loadNetworth(){
+  try{
+    const rows = await fetchAll('app_networth_daily','day');
+    nwLog = rows.map(r=>({day:String(r.day).slice(0,10), accounts:Number(r.accounts), thai_stock:Number(r.thai_stock), tfex:Number(r.tfex), mega_stock:Number(r.mega_stock), forex:Number(r.forex), crypto:Number(r.crypto), total:Number(r.total)}))
+      .sort((a,b)=>a.day.localeCompare(b.day));
+    nwReady = true;
+  }catch(e){ console.warn('app_networth_daily:', e); nwLog = []; nwReady = false; }
+}
+function nwCurrent(){
+  const cp = currentPortfolio || {};
+  const o = {accounts: accountsTotal()};
+  NW_KEYS.forEach(k=>{ o[k] = Number(cp[k]||0); });
+  o.total = o.accounts + NW_KEYS.reduce((a,k)=>a+o[k],0);
+  return o;
+}
+function scheduleNwSave(){
+  if(!nwReady) return;
+  clearTimeout(nwSaveTimer);
+  nwSaveTimer = setTimeout(saveNetworthSnapshot, 1500);
+}
+async function saveNetworthSnapshot(){
+  if(!nwReady) return;
+  const day = todayISO(), c = nwCurrent();
+  const ex = nwLog.find(r=>r.day===day);
+  const same = ex && Math.abs(ex.accounts-c.accounts)<0.005 && NW_KEYS.every(k=>Math.abs(ex[k]-c[k])<0.005);
+  if(same) return;
+  const {error} = await sb.rpc('app_save_networth', {p_day:day, p_accounts:c.accounts, p_thai:c.thai_stock, p_tfex:c.tfex, p_mega:c.mega_stock, p_forex:c.forex, p_crypto:c.crypto});
+  if(error){ console.warn('save networth:', error.message); return; }
+  const row = Object.assign({day}, c);
+  if(ex) Object.assign(ex, row); else { nwLog.push(row); nwLog.sort((a,b)=>a.day.localeCompare(b.day)); }
+  refreshNwUi();
+}
+// เทียบกับภาพล่าสุดก่อนวันนี้ แล้วแยกว่าเปลี่ยนเพราะอะไร
+function nwCompare(){
+  if(!nwReady) return null;
+  const day = todayISO();
+  const prev = nwLog.filter(r=>r.day<day).pop();
+  if(!prev) return {first:true};
+  const c = nwCurrent();
+  const dep = {};   // เงินที่โอนเข้า(+)/ออก(−)พอร์ตตั้งแต่วันหลังภาพก่อนหน้า ถึงวันนี้
+  NW_KEYS.forEach(k=>dep[k]=0);
+  const keyOf = {'Forex':'forex','TFEX':'tfex','S50':'tfex','MGO':'tfex','SET':'thai_stock','US Stock':'mega_stock'};
+  ptxns.filter(x=>x.date>prev.day && x.date<=day).forEach(x=>{ const k = keyOf[x.account]; if(k) dep[k] += Number(x.expense||0) - Number(x.income||0); });
+  const trade = {}; let totalDep = 0;
+  NW_KEYS.forEach(k=>{ trade[k] = (c[k]-prev[k]) - dep[k]; totalDep += dep[k]; });
+  const cashflow = (c.accounts-prev.accounts) + totalDep;
+  return {first:false, prev, c, cashflow, trade, delta:c.total-prev.total, totalDep};
+}
+function nwDayLabel(iso){ return iso.slice(8,10)+'/'+iso.slice(5,7); }
+function nwChgHtml(){
+  const r = nwCompare();
+  if(!nwReady) return '<div class="stat-sub" style="font-size:11px;color:var(--muted);margin-top:6px;">ยังไม่ได้รัน i1_networth_daily.sql</div>';
+  if(!r) return '';
+  if(r.first) return '<div style="font-size:11.5px;color:var(--muted);margin-top:6px;">เริ่มจดภาพวันนี้ — เทียบกับเมื่อวานได้ตั้งแต่พรุ่งนี้</div>';
+  const up = r.delta>=0, col = Math.abs(r.delta)<0.005 ? 'var(--muted)' : (up?'var(--income)':'var(--expense)');
+  const yday = new Date(); yday.setDate(yday.getDate()-1);
+  const isY = r.prev.day === yday.getFullYear()+'-'+pad2(yday.getMonth()+1)+'-'+pad2(yday.getDate());
+  return '<button type="button" class="nw-chg" id="nwChgBtn" style="color:'+col+';">'+(up?'▲':'▼')+' '+(up?'+':'−')+'฿'+mAmt(Math.abs(r.delta))+' <span style="color:var(--muted);font-weight:500;">จาก'+(isY?'เมื่อวาน':' '+nwDayLabel(r.prev.day))+' ›</span></button>';
+}
+function bindNwChg(){
+  const b = document.getElementById('nwChgBtn');
+  if(b) b.onclick = ()=>{ nwOpen = !nwOpen; renderNwDetail(); };
+  renderNwDetail();
+}
+function refreshNwUi(){
+  // อัปเดตเฉพาะส่วน Net Worth โดยไม่ต้องวาดหน้าใหม่ทั้งหมด
+  const card = document.querySelector('#statGrid .stat-card');
+  if(card){ const old = card.querySelector('#nwChgBtn') || card.querySelector('.stat-v').nextElementSibling; if(old && old.className!=='stat-v'){ old.remove(); } card.insertAdjacentHTML('beforeend', nwChgHtml()); }
+  bindNwChg();
+}
+function renderNwDetail(){
+  const el = document.getElementById('nwDetail'); if(!el) return;
+  const r = nwCompare();
+  if(!nwOpen || !r || r.first){ el.innerHTML = ''; return; }
+  const sg = n => (HIDE ? MASK : (n<0?'−':'+')+'฿'+fmtAmt(Math.abs(n)));
+  const col = n => Math.abs(n)<0.005 ? 'var(--muted)' : (n<0?'var(--expense)':'var(--income)');
+  const names = {thai_stock:'หุ้นไทย (SET)', tfex:'TFEX', mega_stock:'US Stock / หุ้นเมกา+จีน', forex:'Forex', crypto:'คริปโต'};
+  const rows = [['รายรับ/รายจ่าย และยอดบัญชีอื่น ๆ', r.cashflow]].concat(NW_KEYS.map(k=>['ผลเทรด/มูลค่าพอร์ต '+names[k], r.trade[k]])).filter((x,i)=>i===0 || Math.abs(x[1])>=0.005 || Math.abs(r.c[NW_KEYS[i-1]])>0);
+  const pts = nwLog.slice(-30);
+  let spark = '';
+  if(pts.length>=2 && !HIDE){
+    const vs = pts.map(x=>x.total), mn = Math.min(...vs), mx = Math.max(...vs), w = 260, h = 44;
+    const path = pts.map((x,i)=> (i?'L':'M')+(i/(pts.length-1)*w).toFixed(1)+' '+(h-4-(mx===mn?0.5:(x.total-mn)/(mx-mn))*(h-8)).toFixed(1)).join(' ');
+    spark = '<div style="margin-top:10px;"><div class="hold-sub" style="margin-bottom:2px;">Net Worth '+pts.length+' วันล่าสุด ('+nwDayLabel(pts[0].day)+' – '+nwDayLabel(pts[pts.length-1].day)+')</div><svg viewBox="0 0 '+w+' '+h+'" style="width:100%;max-width:340px;height:44px;"><path d="'+path+'" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>';
+  }
+  el.innerHTML = '<div class="card" style="margin-top:-6px;"><h3>เปลี่ยนแปลงจาก'+(r.prev.day===todayISO()?'':' ภาพวันที่ '+nwDayLabel(r.prev.day))+' <span class="sub">รวม <b style="color:'+col(r.delta)+'">'+sg(r.delta)+'</b></span></h3>' +
+    rows.map(x=>'<div class="nw-row"><span>'+x[0]+'</span><b style="color:'+col(x[1])+'">'+sg(x[1])+'</b></div>').join('') +
+    (Math.abs(r.totalDep)>=0.005 ? '<div class="hold-sub" style="margin-top:8px;">เงินที่โอนเข้า/ออกพอร์ตช่วงนี้ ('+(HIDE?MASK:(r.totalDep>=0?'+':'−')+'฿'+fmtAmt(Math.abs(r.totalDep)))+') หักออกจากผลเทรดแล้ว — ไม่นับเป็นกำไร/ขาดทุน</div>' : '') +
+    '<div class="hold-sub" style="margin-top:6px;">ยอดพอร์ตมาจากตัวเลขที่คุณกรอกเอง — ผลเทรดจะขึ้นหลังอัปเดตยอดพอร์ต</div>' + spark + '</div>';
+}
+
 /* ---------- NAV ---------- */
 document.querySelectorAll('.nav-item').forEach(item=>{
   item.addEventListener('click', ()=>{
@@ -1072,7 +1172,7 @@ function renderOverview(){
   const netWorth = accountsTotal() + portfolioTotal();
 
   const stats = [
-    {k:'Total Net Worth', v:netWorth, icon:'◆', color:'blue', chg:null, sens:true},
+    {k:'Total Net Worth', v:netWorth, icon:'◆', color:'blue', chg:null, sens:true, nw:true},
     {k:'เงินสดในบัญชี', v:accountsTotal(), icon:'🏦', color:'purple', chg:null, sens:true},
     {k:'รายรับเดือนนี้', v:income, icon:'↓', color:'teal', chg:null, forceUp:true, sens:true},
     {k:'รายจ่ายเดือนนี้', v:expense, icon:'↑', color:'rose', chg:null, forceDown:true, sens:true},
@@ -1083,8 +1183,10 @@ function renderOverview(){
       chgHtml = '<span class="stat-chg '+(s.chg>=0?'up':'down')+'">'+(s.chg>=0?'▲':'▼')+' '+Math.abs(s.chg).toFixed(1)+'%</span>';
     }
     return '<div class="stat-card"><div class="stat-top"><div class="stat-icon" style="background:var(--'+s.color+'-soft);color:var(--'+s.color+')">'+s.icon+'</div>'+chgHtml+'</div>'+
-      '<div class="stat-k">'+s.k+'</div><div class="stat-v">฿'+(s.sens?mAmt(s.v):fmtAmt(s.v))+'</div></div>';
+      '<div class="stat-k">'+s.k+'</div><div class="stat-v">฿'+(s.sens?mAmt(s.v):fmtAmt(s.v))+'</div>'+(s.nw?nwChgHtml():'')+'</div>';
   }).join('');
+  bindNwChg();
+  scheduleNwSave();
 
   const bars = document.getElementById('cashflowBars');
   const months = Array.from(new Set(txns.map(t=>monthKey(t.date)))).sort().slice(-12);
