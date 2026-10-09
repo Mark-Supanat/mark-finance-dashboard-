@@ -1115,11 +1115,14 @@ function renderNwDetail(){
   const pts = nwLog.slice(-30);
   let spark = '';
   if(pts.length>=2 && !HIDE){
-    const vs = pts.map(x=>x.total), mn = Math.min(...vs), mx = Math.max(...vs), w = 260, h = 44;
-    const path = pts.map((x,i)=> (i?'L':'M')+(i/(pts.length-1)*w).toFixed(1)+' '+(h-4-(mx===mn?0.5:(x.total-mn)/(mx-mn))*(h-8)).toFixed(1)).join(' ');
-    spark = '<div style="margin-top:10px;"><div class="hold-sub" style="margin-bottom:2px;">Net Worth '+pts.length+' วันล่าสุด ('+nwDayLabel(pts[0].day)+' – '+nwDayLabel(pts[pts.length-1].day)+')</div><svg viewBox="0 0 '+w+' '+h+'" style="width:100%;max-width:340px;height:44px;"><path d="'+path+'" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg></div>';
-  }
-  el.innerHTML = '<div class="card" style="margin-top:-6px;"><h3>เปลี่ยนแปลงจาก'+(r.prev.day===todayISO()?'':' ภาพวันที่ '+nwDayLabel(r.prev.day))+' <span class="sub">รวม <b style="color:'+col(r.delta)+'">'+sg(r.delta)+'</b></span></h3>' +
+    const vs = pts.map(x=>x.total), mn = Math.min(...vs), mx = Math.max(...vs), w = 600, h = 70;
+    const xy = (x,i)=>[(i/(pts.length-1)*w), (h-6-(mx===mn?0.5:(x.total-mn)/(mx-mn))*(h-12))];
+    const path = pts.map((x,i)=>{ const p=xy(x,i); return (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1); }).join(' ');
+    const lp = xy(pts[pts.length-1], pts.length-1);
+    spark = '<div style="margin-top:12px;"><div class="hold-sub" style="margin-bottom:4px;">Net Worth '+pts.length+' วันล่าสุด ('+nwDayLabel(pts[0].day)+' – '+nwDayLabel(pts[pts.length-1].day)+')</div>'+
+      '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" style="width:100%;height:70px;display:block;background:var(--bg,#f6f8fb);border-radius:10px;"><path d="'+path+'" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>'+
+      '<div class="hold-sub" style="display:flex;justify-content:space-between;margin-top:4px;"><span>ต่ำสุด ฿'+fmtAmt(mn)+'</span><span>สูงสุด ฿'+fmtAmt(mx)+'</span></div></div>';
+  }el.innerHTML = '<div class="card" style="margin-top:-6px;"><h3>เปลี่ยนแปลงจาก'+(r.prev.day===todayISO()?'':' ภาพวันที่ '+nwDayLabel(r.prev.day))+' <span class="sub">รวม <b style="color:'+col(r.delta)+'">'+sg(r.delta)+'</b></span></h3>' +
     rows.map(x=>'<div class="nw-row"><span>'+x[0]+'</span><b style="color:'+col(x[1])+'">'+sg(x[1])+'</b></div>').join('') +
     (Math.abs(r.totalDep)>=0.005 ? '<div class="hold-sub" style="margin-top:8px;">เงินที่โอนเข้า/ออกพอร์ตช่วงนี้ ('+(HIDE?MASK:(r.totalDep>=0?'+':'−')+'฿'+fmtAmt(Math.abs(r.totalDep)))+') หักออกจากผลเทรดแล้ว — ไม่นับเป็นกำไร/ขาดทุน</div>' : '') +
     '<div class="hold-sub" style="margin-top:6px;">ยอดพอร์ตมาจากตัวเลขที่คุณกรอกเอง — ผลเทรดจะขึ้นหลังอัปเดตยอดพอร์ต</div>' + spark + '</div>';
