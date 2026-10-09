@@ -549,12 +549,12 @@ function showError(msg){
 
 // ดึงข้อมูลทีละ 1,000 แถวจนครบ (Supabase จำกัด 1,000 แถวต่อ query) และ throw เมื่อโหลดพลาด
 // เพื่อไม่ให้ถูกมองว่า "ตารางว่าง" แล้วไป seed ซ้ำ
-async function fetchAll(table, orderCol){
+async function fetchAll(table, orderCol, noId){
   const PAGE = 1000;
   const rows = [];
   for(let from = 0; ; from += PAGE){
     let q = sb.from(table).select('*');
-    if(orderCol) q = q.order(orderCol).order('id');   // id เป็นตัวตัดสินเมื่อวันที่ซ้ำ ให้การแบ่งหน้าไม่ตกหล่น
+    if(orderCol){ q = q.order(orderCol); if(!noId) q = q.order('id'); }   // id เป็นตัวตัดสินเมื่อวันที่ซ้ำ ให้การแบ่งหน้าไม่ตกหล่น
     const {data, error} = await q.range(from, from + PAGE - 1);
     if(error) throw new Error(table + ': ' + error.message);
     rows.push(...(data || []));
@@ -1036,7 +1036,7 @@ let nwLog = [], nwReady = false, nwOpen = false, nwSaveTimer = null;
 const NW_KEYS = ['thai_stock','tfex','mega_stock','forex','crypto'];
 async function loadNetworth(){
   try{
-    const rows = await fetchAll('app_networth_daily','day');
+    const rows = await fetchAll('app_networth_daily','day',true);
     nwLog = rows.map(r=>({day:String(r.day).slice(0,10), accounts:Number(r.accounts), thai_stock:Number(r.thai_stock), tfex:Number(r.tfex), mega_stock:Number(r.mega_stock), forex:Number(r.forex), crypto:Number(r.crypto), total:Number(r.total)}))
       .sort((a,b)=>a.day.localeCompare(b.day));
     nwReady = true;
