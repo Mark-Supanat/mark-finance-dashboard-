@@ -377,6 +377,9 @@
             </div>
             <div><label class="field-label">หมายเหตุ</label><input type="text" id="fNote" placeholder="เช่น ข้าวเยง"></div>
           </div>
+          <div class="form-row" id="accountField">
+            <div style="flex:1;"><label class="field-label" id="fAccountLabel">จ่ายจากบัญชี</label><select id="fAccount"></select></div>
+          </div>
           <div class="form-row" id="transferFields" style="display:none;">
             <div><label class="field-label">จากบัญชี</label><select id="fFrom"></select></div>
             <div><label class="field-label">ไปบัญชี</label><select id="fTo"></select></div>
@@ -642,7 +645,7 @@ async function loadAllData(){
     currentPortfolio.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(currentPortfolio[k]||0),0);
   }
 
-  txns = txRows.map(r=>({id:r.id, date:r.date, type:r.type, amount:Number(r.amount), category:r.category, note:r.note}));
+  txns = txRows.map(r=>({id:r.id, date:r.date, type:r.type, amount:Number(r.amount), category:r.category, note:r.note, accountId:r.account_id||null}));
   transfers = trfRows.map(r=>({id:r.id, date:r.date, from:r.from_account, to:r.to_account, amount:Number(r.amount), reserveId:r.reserve_id||null, reserveDir:r.reserve_dir||null}));
   ptxns = pfRows.map(r=>({id:r.id, date:r.date, account:r.account, income:Number(r.income), expense:Number(r.expense), note:r.note, transferId:r.transfer_id||null}));
 
@@ -1478,6 +1481,7 @@ function accName(id){
 function populateAccountSelects(){
   const opts = accounts.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>').join('');
   document.getElementById('fFrom').innerHTML = opts;
+  fillTxAccount();
   document.getElementById('fTo').innerHTML = opts;
   const resOpts = '<option value="">ไม่เกี่ยวกับ Reserve</option>' + reserves.map(r=>'<option value="'+esc(r.id)+'">'+esc(r.name)+'</option>').join('');
   document.getElementById('fReserve').innerHTML = resOpts;
@@ -1491,6 +1495,31 @@ function isPortfolioAcc(id){ return !!PORT_DEFS[id]; }
 function portfolioAssetKey(id){ return PORT_DEFS[id].key; }
 function portfolioAccLabel(id){ return PORT_DEFS[id].label; }
 
+/* เลือกบัญชีของรายการรับ/จ่าย (ตัดยอดอัตโนมัติ) */
+let txAccReady = true;   // จะเป็น false ถ้ายังไม่ได้รัน j1_transaction_account.sql
+function txAccKey(){ return selectedType==='รับ' ? 'รับ' : document.getElementById('fCategory').value; }
+function txAccDefault(){
+  let saved = {}; try{ saved = JSON.parse(localStorage.getItem('txAccDefaults')||'{}'); }catch(e){}
+  const k = txAccKey();
+  if(saved[k] && accounts.some(a=>a.id===saved[k])) return saved[k];
+  const pick = id=>accounts.some(a=>a.id===id) ? id : '';
+  if(selectedType==='จ่าย' && k==='อาหาร') return pick('scb') || (accounts[0]&&accounts[0].id) || '';
+  return pick('kbank1') || (accounts[0]&&accounts[0].id) || '';
+}
+function fillTxAccount(){
+  const sel = document.getElementById('fAccount'); if(!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = accounts.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>').join('') + '<option value="">ไม่ระบุ (ไม่ตัดยอด)</option>';
+  if(cur !== '' && accounts.some(a=>a.id===cur)) sel.value = cur; else applyTxAccDefault();
+}
+function applyTxAccDefault(){ const sel = document.getElementById('fAccount'); if(sel && accounts.length) sel.value = txAccDefault(); }
+function saveTxAccDefault(accId){ try{ const o = JSON.parse(localStorage.getItem('txAccDefaults')||'{}'); o[txAccKey()] = accId; localStorage.setItem('txAccDefaults', JSON.stringify(o)); }catch(e){} }
+function bumpAccBalance(accId, type, amount, sign){
+  const a = accounts.find(x=>x.id===accId); if(!a) return;
+  a.balance = Number(a.balance||0) + sign * (type==='รับ' ? amount : -amount);
+}
+document.addEventListener('change', e=>{ if(e.target && e.target.id==='fCategory' && !editingTxId) applyTxAccDefault(); });
+
 let editingTxId = null;
 function setType(type){
   document.querySelectorAll('.type-btn').forEach(b=>b.classList.toggle('active', b.getAttribute('data-type')===type));
@@ -1499,6 +1528,9 @@ function setType(type){
   document.getElementById('normalFields').style.display = isTransfer ? 'none' : 'flex';
   document.getElementById('transferFields').style.display = isTransfer ? 'flex' : 'none';
   document.getElementById('reserveEffectFields').style.display = isTransfer ? 'flex' : 'none';
+  document.getElementById('accountField').style.display = isTransfer ? 'none' : 'flex';
+  document.getElementById('fAccountLabel').textContent = selectedType==='รับ' ? 'เข้าบัญชี' : 'จ่ายจากบัญชี';
+  if(!editingTxId) applyTxAccDefault();
 }
 document.getElementById('typeToggle').addEventListener('click', (e)=>{
   const btn = e.target.closest('.type-btn');
@@ -1523,6 +1555,7 @@ function startEditTx(id){
   document.getElementById('fAmount').value = t.amount;
   document.getElementById('fCategory').value = t.category;
   document.getElementById('fNote').value = t.note || '';
+  document.getElementById('fAccount').value = t.accountId || '';
   document.getElementById('submitBtn').textContent = 'อัปเดตรายการ';
   document.getElementById('cancelEditBtn').style.display = 'block';
   document.getElementById('typeToggle').style.opacity = '.5';
@@ -1556,18 +1589,37 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
   }else{
     const category = document.getElementById('fCategory').value;
     const note = document.getElementById('fNote').value.trim();
-    if(editingTxId){
-      const upd = {date, type:selectedType, amount, category, note};
-      const {error} = await sb.from('app_transactions').update(upd).eq('id', editingTxId);
-      if(error){ showError('update transaction: '+error.message); submitBtn.disabled=false; return; }
-      Object.assign(txns.find(x=>x.id===editingTxId), upd);
+    const accId = document.getElementById('fAccount').value || null;
+    if(accId){
+      const acc = accounts.find(x=>x.id===accId);
+      if(selectedType==='จ่าย' && acc && Number(acc.balance||0) - amount < 0 && !confirm('⚠ ยอด '+acc.name+' จะติดลบ (฿'+fmtAmt(Number(acc.balance||0)-amount)+')\n\nยืนยันบันทึกต่อไหม?')){ submitBtn.disabled=false; return; }
+    }
+    const isEdit = !!editingTxId;
+    const txId = isEdit ? editingTxId : uid();
+    const old = isEdit ? txns.find(x=>x.id===editingTxId) : null;
+    let usedRpc = false;
+    if(txAccReady){
+      const {error} = await sb.rpc(isEdit?'app_update_transaction':'app_add_transaction', {p_id:txId, p_date:date, p_type:selectedType, p_amount:amount, p_category:category, p_note:note, p_account:accId||''});
+      if(!error) usedRpc = true;
+      else if(/could not find|does not exist|schema cache/i.test(error.message||'')){ txAccReady = false; showError('ยังไม่ได้รัน j1_transaction_account.sql — บันทึกรายการแล้วแต่ยังไม่ตัดยอดบัญชี'); }
+      else { showError('บันทึกไม่สำเร็จ (ไม่มีอะไรถูกเปลี่ยน): '+error.message); submitBtn.disabled=false; return; }
+    }
+    if(!usedRpc){
+      const row = {id:txId, date, type:selectedType, amount, category, note};
+      const {error} = isEdit ? await sb.from('app_transactions').update({date, type:selectedType, amount, category, note}).eq('id', txId) : await sb.from('app_transactions').insert(row);
+      if(error){ showError('บันทึกรายการไม่สำเร็จ: '+error.message); submitBtn.disabled=false; return; }
+    }
+    const eff = usedRpc ? accId : null;
+    if(isEdit && old){
+      if(old.accountId) bumpAccBalance(old.accountId, old.type, old.amount, -1);
+      Object.assign(old, {date, type:selectedType, amount, category, note, accountId: usedRpc ? eff : old.accountId});
+      if(eff) bumpAccBalance(eff, selectedType, amount, 1);
       exitEditMode();
     }else{
-      const row = {id:uid(), date, type:selectedType, amount, category, note};
-      const {error} = await sb.from('app_transactions').insert(row);
-      if(error){ showError('insert transaction: '+error.message); submitBtn.disabled=false; return; }
-      txns.push(row);
+      txns.push({id:txId, date, type:selectedType, amount, category, note, accountId:eff});
+      if(eff) bumpAccBalance(eff, selectedType, amount, 1);
     }
+    if(accId) saveTxAccDefault(accId);
   }
   activeMonth = monthKey(date);
   renderActionTab(); renderOverview(); renderPortfolioTab();
@@ -2166,7 +2218,7 @@ async function deleteTransferWithReverse(id){
 function renderMonthPanel(key){
   const panel = document.getElementById('monthPanel');
   const items = [
-    ...txns.filter(t=>monthKey(t.date)===key).map(t=>({date:t.date,type:t.type,amount:t.amount,label:esc(t.note||'-')+' · '+esc(t.category),id:t.id,src:'tx'})),
+    ...txns.filter(t=>monthKey(t.date)===key).map(t=>({date:t.date,type:t.type,amount:t.amount,label:esc(t.note||'-')+' · '+esc(t.category)+(t.accountId?' <span class="hold-sub" style="white-space:nowrap;">· '+esc(accName(t.accountId))+'</span>':''),id:t.id,src:'tx'})),
     ...transfers.filter(t=>monthKey(t.date)===key).map(t=>({date:t.date,type:'โอน',amount:t.amount,label:'โอน '+esc(accName(t.from))+' → '+esc(accName(t.to)),id:t.id,src:'trf'}))
   ].sort((a,b)=>a.date.localeCompare(b.date));
 
@@ -2190,8 +2242,9 @@ function renderMonthPanel(key){
       const _row = btn.dataset.src==='tx' ? txns.find(t=>t.id===btn.dataset.id) : transfers.find(t=>t.id===btn.dataset.id);
       if(_row && guardLocked(_row.date)) return;
       if(btn.dataset.src==='tx'){
-        const {error} = await sb.from('app_transactions').delete().eq('id', btn.dataset.id);
+        const {error} = (_row && _row.accountId && txAccReady) ? await sb.rpc('app_delete_transaction', {p_id:btn.dataset.id}) : await sb.from('app_transactions').delete().eq('id', btn.dataset.id);
         if(error){ showError('delete tx: '+error.message); return; }
+        if(_row && _row.accountId && txAccReady) bumpAccBalance(_row.accountId, _row.type, _row.amount, -1);
         txns = txns.filter(t=>t.id!==btn.dataset.id);
       }else{
         await deleteTransferWithReverse(btn.dataset.id);
