@@ -392,6 +392,7 @@
             <div><label class="field-label">จากบัญชี</label><select id="fFrom"></select></div>
             <div><label class="field-label">ไปบัญชี</label><select id="fTo"></select></div>
           </div>
+          <div id="fPfAdjust"></div>
           <div class="form-row" id="reserveEffectFields" style="display:none;">
             <div>
               <label class="field-label">ผลต่อ Reserve (ถ้ามี)</label>
@@ -450,6 +451,7 @@
             <div><label class="field-label" id="pfAccLabel">เงินเข้าบัญชี</label><select id="pfAccount"></select></div>
             <div><label class="field-label">หมายเหตุ</label><input type="text" id="pfNote" placeholder="เช่น 100 ดอล"></div>
           </div>
+          <div id="pfAdjust"></div>
           <details style="margin-bottom:10px;">
             <summary style="font-size:12px;color:var(--muted);cursor:pointer;">ตัวเลือกเพิ่มเติม: ผลต่อ Reserve</summary>
             <div class="form-row" style="margin-top:8px;">
@@ -1546,6 +1548,52 @@ function bumpAccBalance(accId, type, amount, sign){
 }
 document.addEventListener('change', e=>{ if(e.target && e.target.id==='fCategory' && !editingTxId) applyTxAccDefault(); });
 
+
+/* ยอดจริงของพอร์ตหลังถอน/ฝาก — ส่วนต่างจากที่เว็บคำนวณ = กำไร/ขาดทุนที่เกิดตอนปิดสถานะ */
+function renderPfAdjust(boxId, from, to, amount){
+  const box = document.getElementById(boxId); if(!box) return;
+  const fp = isPortfolioAcc(from), tp = isPortfolioAcc(to);
+  if(fp===tp || !(amount>0)){ box.innerHTML=''; return; }
+  const portId = fp ? from : to, key = portfolioAssetKey(portId), cur = Number(currentPortfolio[key]||0);
+  const calc = fp ? cur-amount : cur+amount, id = boxId+'Val';
+  const old = document.getElementById(id), keep = old && old.dataset.touched==='1' && old.dataset.port===portId ? old.value : null;
+  box.innerHTML = '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:2px 0 10px;font-size:12.5px;">' +
+    '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><span>'+(fp?'ถอนจาก':'ฝากเข้า')+'พอร์ต '+portfolioAccLabel(portId)+' · ยอดตอนนี้ ฿'+fmtAmt(cur)+'</span><span style="color:var(--muted);">เว็บคำนวณหลัง'+(fp?'ถอน':'ฝาก')+' ฿'+fmtAmt(calc)+'</span></div>' +
+    '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;"><b>ยอดพอร์ตจริงหลัง'+(fp?'ถอน':'ฝาก')+'</b><input type="number" step="any" id="'+id+'" value="'+(keep!==null?keep:calc)+'" data-calc="'+calc+'" data-port="'+portId+'" data-key="'+key+'" style="width:150px;text-align:right;padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:var(--card);"></label>' +
+    '<div id="'+id+'Diff" style="margin-top:6px;font-size:12px;"></div></div>';
+  const inp = document.getElementById(id);
+  const upd = ()=>{
+    const d = (parseFloat(inp.value)||0) - calc, el = document.getElementById(id+'Diff');
+    el.innerHTML = Math.abs(d)<0.005 ? '<span style="color:var(--muted);">ตรงกับที่คำนวณ — ไม่ต้องแก้</span>' :
+      'ต่างจากที่คำนวณ <b style="color:'+(d<0?'var(--expense)':'var(--income)')+'">'+(d<0?'−':'+')+'฿'+fmtAmt(Math.abs(d))+'</b> = '+(d<0?'ขาดทุน':'กำไร')+'ที่เกิดตอนปิดสถานะ (จะขึ้นเป็นผลเทรดใน Net Worth)';
+  };
+  if(keep!==null) inp.dataset.touched='1';
+  inp.addEventListener('input', ()=>{ inp.dataset.touched='1'; upd(); }); upd();
+}
+function getPfOverride(boxId){
+  const inp = document.getElementById(boxId+'Val'); if(!inp) return null;
+  const v = parseFloat(inp.value), calc = parseFloat(inp.dataset.calc);
+  if(isNaN(v) || Math.abs(v-calc)<0.005) return null;
+  return {key:inp.dataset.key, value:v};
+}
+async function applyPfOverride(ov){
+  if(!ov) return;
+  currentPortfolio[ov.key] = ov.value;
+  currentPortfolio.total = OVERVIEW_ASSET_DEFS.reduce((a,d)=>a+Number(currentPortfolio[d.key]||0),0);
+  const {error} = await sb.from('app_portfolio_current').update({[ov.key]:ov.value, total:currentPortfolio.total}).eq('id','current');
+  if(error) showError('บันทึกการโอนแล้ว แต่ปรับยอดพอร์ตจริงไม่สำเร็จ: '+error.message);
+}
+function refreshPfAdjust(){
+  if(typeof selectedType!=='undefined' && selectedType==='โอน' && !editingTxId){
+    renderPfAdjust('fPfAdjust', document.getElementById('fFrom').value, document.getElementById('fTo').value, parseFloat(document.getElementById('fAmount').value)||0);
+  } else { const b = document.getElementById('fPfAdjust'); if(b) b.innerHTML=''; }
+  const dir = document.getElementById('pfDir').value, port = document.getElementById('pfPort').value, acc = document.getElementById('pfAccount').value;
+  renderPfAdjust('pfAdjust', dir==='out'?port:acc, dir==='out'?acc:port, parseFloat(document.getElementById('pfAmount').value)||0);
+}
+document.addEventListener('input', e=>{ if(e.target && ['fAmount','pfAmount'].includes(e.target.id)) refreshPfAdjust(); });
+document.addEventListener('change', e=>{ if(e.target && ['fFrom','fTo','pfPort','pfDir','pfAccount'].includes(e.target.id)) refreshPfAdjust(); });
+document.getElementById('typeToggle').addEventListener('click', ()=>setTimeout(refreshPfAdjust,0));
+
 let editingTxId = null;
 function setType(type){
   document.querySelectorAll('.type-btn').forEach(b=>b.classList.toggle('active', b.getAttribute('data-type')===type));
@@ -1612,7 +1660,9 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
       p_reserve_id: resIdSel, p_reserve_dir: resDirSel
     });
     if(error){ showError('บันทึกการโอนไม่สำเร็จ (ไม่มีอะไรถูกเปลี่ยน): '+error.message); submitBtn.disabled=false; return; }
+    const ovT = getPfOverride('fPfAdjust');
     await refreshTransferState();
+    await applyPfOverride(ovT);
   }else{
     const category = document.getElementById('fCategory').value;
     const note = document.getElementById('fNote').value.trim();
@@ -1652,6 +1702,7 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
   renderActionTab(); renderOverview(); renderPortfolioTab();
   document.getElementById('fAmount').value='';
   document.getElementById('fNote').value='';
+  refreshPfAdjust();
   submitBtn.disabled=false;
 });
 
@@ -1806,9 +1857,12 @@ document.getElementById('pfForm').addEventListener('submit', async (e)=>{
     p_reserve_id: resId, p_reserve_dir: resDir, p_note: note || null
   });
   if(error){ showError('บันทึกไม่สำเร็จ (ไม่มีอะไรถูกเปลี่ยน): '+error.message); btn.disabled=false; return; }
+  const ovP = getPfOverride('pfAdjust');
   await refreshTransferState();
+  await applyPfOverride(ovP);
   document.getElementById('pfAmount').value = '';
   document.getElementById('pfNote').value = '';
+  refreshPfAdjust();
   renderActionTab(); renderOverview(); renderPortfolioTab();
   btn.disabled = false;
 });
