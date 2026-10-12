@@ -312,6 +312,7 @@
 
     <!-- OVERVIEW -->
     <div class="view active" id="view-overview">
+      <div id="wkBanner"></div>
       <div class="stat-grid" id="statGrid"></div>
       <div id="nwDetail"></div>
 
@@ -407,6 +408,8 @@
           <button type="button" class="small-btn" id="cancelEditBtn" style="display:none;width:100%;margin-top:8px;padding:9px 0;">ยกเลิกการแก้ไข</button>
         </form>
       </div>
+
+      <details class="card" id="wkCheck"><summary style="cursor:pointer;font-weight:600;font-size:14px;">✅ เช็กลิสต์ประจำสัปดาห์ <span id="wkCheckSum" class="muted" style="font-weight:400;font-size:12px;margin-left:6px;"></span></summary><div id="wkCheckBody" style="margin-top:10px;"></div></details>
 
       <details class="card" id="monthListDetails">
         <summary class="card-summary">รายการประจำเดือน <span class="sub">แตะเพื่อดูรายการรายวัน</span></summary>
@@ -1266,6 +1269,7 @@ function openNwForm(mode){
         nwOpen = true;
       }
       m.remove();
+      wkMarkUpdated();
       renderOverview();
       await saveNetworthSnapshot();
       refreshNwUi();
@@ -1274,13 +1278,44 @@ function openNwForm(mode){
 }
 
 /* จำว่าผู้ใช้เปิด/ปิดกล่องไหนไว้ (หน้า Action) — รีเฟรชแล้วคงเดิม */
-['monthListDetails','monthSummaryDetails'].forEach(id=>{
+['monthListDetails','monthSummaryDetails','wkCheck'].forEach(id=>{
   const el = document.getElementById(id); if(!el) return;
   const key = 'open_'+id;
   try{ const v = localStorage.getItem(key); if(v==='1') el.open = true; else if(v==='0') el.open = false; }catch(e){}
   el.addEventListener('toggle', ()=>{ try{ localStorage.setItem(key, el.open?'1':'0'); }catch(e){} });
 });
 
+/* ---------- WEEKLY REMINDER ---------- */
+const WK_DAYS = 7;
+const WK_ITEMS = ['ดูยอดจริงในแอปธนาคาร (KBank 1 · SCB · TrueMoney · เป๋าตัง)','ดูยอดจริงในโบรกเกอร์ (Forex · TFEX · SET · US)','กรอกยอดจริงที่ Net Worth → อัปเดต','ดูว่า Net Worth ขึ้น/ลงเพราะอะไร','บันทึกรายจ่ายที่ยังค้าง'];
+function wkGet(k,d){ try{ const v=localStorage.getItem(k); return v===null?d:JSON.parse(v); }catch(e){ return d; } }
+function wkSet(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+function wkDaysSince(iso){ if(!iso) return null; const a=new Date(iso+'T00:00:00'), b=new Date(todayISO()+'T00:00:00'); return Math.round((b-a)/86400000); }
+function wkMarkUpdated(){ wkSet('wkLastUpdate', todayISO()); wkSet('wkChecks', {}); wkSet('wkSnooze', ''); renderWeekly(); }
+function wkGoCheck(){
+  const nav=document.querySelector('.nav-item[data-view="action"]'); if(nav) nav.click();
+  const d=document.getElementById('wkCheck'); if(d){ d.open=true; try{ localStorage.setItem('open_wkCheck','1'); }catch(e){} setTimeout(()=>d.scrollIntoView({behavior:'smooth',block:'start'}),50); }
+}
+function renderWeekly(){
+  const last = wkGet('wkLastUpdate',''), days = wkDaysSince(last), snooze = wkGet('wkSnooze','');
+  const bn = document.getElementById('wkBanner');
+  if(bn){
+    if(days===0){
+      bn.innerHTML = '<div class="card" style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:#f0fdf4;border:1px solid #bbf7d0;"><span style="font-size:20px;">✅</span><div><div style="font-weight:600;font-size:14px;">อัปเดตแล้วเมื่อวันนี้</div><div style="font-size:12px;color:var(--muted);">รอบหน้าเตือนอีกใน '+WK_DAYS+' วัน</div></div></div>';
+    } else if((days===null || days>=WK_DAYS) && snooze!==todayISO()){
+      bn.innerHTML = '<div class="card" style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:#fff7ed;border:1px solid #fed7aa;flex-wrap:wrap;"><span style="font-size:20px;">⏰</span><div style="flex:1;min-width:180px;"><div style="font-weight:600;font-size:14px;">ถึงเวลาอัปเดตพอร์ตแล้ว</div><div style="font-size:12px;color:var(--muted);">'+(days===null?'ยังไม่เคยกดอัปเดต':'อัปเดตล่าสุด '+days+' วันที่แล้ว')+' · ยอดที่เห็นอาจไม่ตรงของจริง</div></div><button type="button" class="small-btn" id="wkGo">อัปเดตเลย</button><button type="button" class="small-btn" id="wkSnz" title="เตือนใหม่พรุ่งนี้">×</button></div>';
+      document.getElementById('wkGo').onclick = wkGoCheck;
+      document.getElementById('wkSnz').onclick = ()=>{ wkSet('wkSnooze', todayISO()); renderWeekly(); };
+    } else bn.innerHTML = '';
+  }
+  const body = document.getElementById('wkCheckBody'); if(!body) return;
+  const checks = wkGet('wkChecks',{});
+  body.innerHTML = WK_ITEMS.map((t,i)=>'<label style="display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--border,#f1f5f9);font-size:13.5px;cursor:pointer;"><input type="checkbox" data-wk="'+i+'" '+(checks[i]?'checked':'')+' style="width:18px;height:18px;flex:none;"><span style="flex:1;">'+t+'</span>'+(i===2?'<button type="button" class="small-btn" id="wkOpenNw">เปิด ›</button>':'')+'</label>').join('');
+  body.querySelectorAll('input[data-wk]').forEach(c=>c.onchange=()=>{ const o=wkGet('wkChecks',{}); o[c.dataset.wk]=c.checked; wkSet('wkChecks',o); renderWeekly(); });
+  const op = document.getElementById('wkOpenNw'); if(op) op.onclick = e=>{ e.preventDefault(); const nav=document.querySelector('.nav-item[data-view="overview"]'); if(nav) nav.click(); setTimeout(()=>{ try{ openNwForm('update'); }catch(x){} },50); };
+  const n = WK_ITEMS.filter((_,i)=>checks[i]).length, sum = document.getElementById('wkCheckSum');
+  if(sum) sum.textContent = n+'/'+WK_ITEMS.length+(days===null?'':' · อัปเดตล่าสุด '+(days===0?'วันนี้':days+' วันที่แล้ว'));
+}
 /* ---------- NAV ---------- */
 document.querySelectorAll('.nav-item').forEach(item=>{
   item.addEventListener('click', ()=>{
@@ -1321,6 +1356,7 @@ function hideCfTip(){
   document.querySelectorAll('#cashflowBars .bar-col').forEach(c=>c.classList.remove('sel'));
 }
 function renderOverview(){
+  try{ renderWeekly(); }catch(e){}
   const cur = todayISO().slice(0,7);
   const monthTx = txns.filter(t=>monthKey(t.date)===cur);
   const income = monthTx.filter(t=>t.type==='รับ').reduce((s,t)=>s+Number(t.amount),0);
