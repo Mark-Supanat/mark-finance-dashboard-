@@ -340,6 +340,7 @@
           <div id="portfolioDonutLegend" style="flex:1;min-width:150px;display:flex;flex-direction:column;gap:7px;font-size:12.5px;"></div>
         </div>
         <div class="acc-list" id="overviewPortfolioList"></div>
+        <div style="margin-top:20px;"><h3 style="font-size:13.5px;margin:0 0 10px;">กำไร/ขาดทุนรายพอร์ต <span class="sub" style="font-weight:500;">ฝาก − ถอน เทียบมูลค่าตอนนี้</span></h3><div id="pnlCardsOv"></div></div>
         <div id="holdingsBox" style="margin-top:20px;"></div>
       </div>
 
@@ -1486,6 +1487,7 @@ function renderOverviewPortfolioList(){
     });
   });
   renderPortfolioDonut();
+  const pc = document.getElementById('pnlCardsOv'); if(pc) pc.innerHTML = pnlCardsHtml();
   renderHoldings();
 }
 
@@ -1595,16 +1597,27 @@ function renderPfAdjust(boxId, from, to, amount){
   const old = document.getElementById(id), keep = old && old.dataset.touched==='1' && old.dataset.port===portId ? old.value : null;
   box.innerHTML = '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:2px 0 10px;font-size:12.5px;">' +
     '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><span>'+(fp?'ถอนจาก':'ฝากเข้า')+'พอร์ต '+portfolioAccLabel(portId)+' · ยอดตอนนี้ ฿'+fmtAmt(cur)+'</span><span style="color:var(--muted);">เว็บคำนวณหลัง'+(fp?'ถอน':'ฝาก')+' ฿'+fmtAmt(calc)+'</span></div>' +
-    '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;"><b>ยอดพอร์ตจริงหลัง'+(fp?'ถอน':'ฝาก')+'</b><input type="number" step="any" id="'+id+'" value="'+(keep!==null?keep:calc)+'" data-calc="'+calc+'" data-port="'+portId+'" data-key="'+key+'" style="width:150px;text-align:right;padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:var(--card);"></label>' +
+    '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;"><b>ยอดพอร์ตจริงหลัง'+(fp?'ถอน':'ฝาก')+' (ตามแอปโบรกเกอร์ · ถอนหมดใส่ 0)</b><input type="number" step="any" min="0" placeholder="กรอกยอดจริง" id="'+id+'" value="'+(keep!==null?keep:'')+'" data-calc="'+calc+'" data-port="'+portId+'" data-key="'+key+'" style="width:150px;text-align:right;padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:var(--card);"></label>' +
     '<div id="'+id+'Diff" style="margin-top:6px;font-size:12px;"></div></div>';
   const inp = document.getElementById(id);
   const upd = ()=>{
-    const d = (parseFloat(inp.value)||0) - calc, el = document.getElementById(id+'Diff');
+    const el = document.getElementById(id+'Diff');
+    if(inp.value.trim()===''){ el.innerHTML = '<span style="color:var(--expense);">ต้องกรอกยอดจริงหลัง'+(fp?'ถอน':'ฝาก')+'ก่อนบันทึก (ดูจากแอปโบรกเกอร์)</span>'; return; }
+    if((parseFloat(inp.value)||0) < 0){ el.innerHTML = '<span style="color:var(--expense);">ยอดพอร์ตติดลบไม่ได้ — ถ้าถอนหมดให้ใส่ 0</span>'; return; }
+    const d = (parseFloat(inp.value)||0) - calc;
     el.innerHTML = Math.abs(d)<0.005 ? '<span style="color:var(--muted);">ตรงกับที่คำนวณ — ไม่ต้องแก้</span>' :
       'ต่างจากที่คำนวณ <b style="color:'+(d<0?'var(--expense)':'var(--income)')+'">'+(d<0?'−':'+')+'฿'+fmtAmt(Math.abs(d))+'</b> = '+(d<0?'ขาดทุน':'กำไร')+'ที่เกิดตอนปิดสถานะ (จะขึ้นเป็นผลเทรดใน Net Worth)';
   };
   if(keep!==null) inp.dataset.touched='1';
   inp.addEventListener('input', ()=>{ inp.dataset.touched='1'; upd(); }); upd();
+}
+// true = มีช่องยอดจริงแต่ยังว่าง/ติดลบ → ห้ามบันทึก (กันค่าเดาแบบเคส −97)
+function pfActualInvalid(boxId){
+  const inp = document.getElementById(boxId+'Val'); if(!inp) return false;
+  const v = parseFloat(inp.value);
+  if(inp.value.trim()==='' || isNaN(v)){ showError('กรอก "ยอดพอร์ตจริง" หลังฝาก/ถอนก่อนบันทึก (ดูจากแอปโบรกเกอร์ · ถอนหมดใส่ 0)'); return true; }
+  if(v<0){ showError('ยอดพอร์ตติดลบไม่ได้ — ถ้าถอนหมดให้ใส่ 0'); return true; }
+  return false;
 }
 function getPfOverride(boxId){
   const inp = document.getElementById(boxId+'Val'); if(!inp) return null;
@@ -1687,6 +1700,7 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
     const from = document.getElementById('fFrom').value;
     const to = document.getElementById('fTo').value;
     if(from===to){ showError('บัญชีต้นทางกับปลายทางต้องไม่ใช่บัญชีเดียวกัน'); submitBtn.disabled=false; return; }
+    if(pfActualInvalid('fPfAdjust')){ submitBtn.disabled=false; return; }
     const warn = negativeWarnings(from, to, amount);
     if(warn.length && !confirm(warn.join('\n')+'\n\nยืนยันบันทึกต่อไหม?')){ submitBtn.disabled=false; return; }
     const resIdSel = document.getElementById('fReserve').value || null;
@@ -1884,6 +1898,7 @@ document.getElementById('pfForm').addEventListener('submit', async (e)=>{
   if(guardLocked(date)){ btn.disabled=false; return; }
   const from = dir==='out' ? port : acc;
   const to = dir==='out' ? acc : port;
+  if(pfActualInvalid('pfAdjust')){ btn.disabled=false; return; }
   const warn = negativeWarnings(from, to, amount);
   if(warn.length && !confirm(warn.join('\n')+'\n\nยืนยันบันทึกต่อไหม?')){ btn.disabled=false; return; }
   const resId = document.getElementById('pfReserve').value || null;
@@ -1947,40 +1962,45 @@ function renderPortfolioFullLog(){
   el.querySelectorAll('[data-pf]').forEach(btn=>{ btn.onclick = ()=>deletePortfolioLogRow(btn.dataset.pf); });
 }
 
-function renderPortfolioAccSummary(){
+function pnlCardsHtml(){
   const cur = (typeof currentPortfolio==='object' && currentPortfolio) ? currentPortfolio : {};
   const groups = [
     {label:'Forex', accs:['Forex'], now:Number(cur.forex||0)},
     {label:'TFEX', accs:['TFEX','S50','MGO'], now:Number(cur.tfex||0)},
     {label:'SET (หุ้นไทย)', accs:['SET'], now:Number(cur.thai_stock||0)},
-    {label:'US Stock (หุ้นเมกา + จีน)', accs:['US Stock'], now:Number(cur.mega_stock||0)}
+    {label:'US Stock', accs:['US Stock'], now:Number(cur.mega_stock||0)}
   ];
-  const signed = (n)=> (n<0?'−':'+')+'฿'+fmtAmt(Math.abs(n));
-  const col = (n)=> n<0 ? 'var(--expense)' : 'var(--income)';
-  let totOut=0, totIn=0, totNow=0;
-  const rowsHtml = groups.map(g=>{
+  const signed = (n)=> (n<0?'−':'+')+'฿'+mAmt(Math.abs(n));
+  const col = (n)=> Math.abs(n)<0.005 ? 'var(--muted)' : (n<0 ? 'var(--expense)' : 'var(--income)');
+  const rowsOf = g=>{
     const rows = ptxns.filter(p=>g.accs.includes(p.account));
-    const out = rows.reduce((s,p)=>s+Number(p.income||0),0);    // ถอนออกจากพอร์ต
-    const inn = rows.reduce((s,p)=>s+Number(p.expense||0),0);   // ฝากเข้าพอร์ต
-    const net = out - inn, pl = out + g.now - inn;
-    totOut+=out; totIn+=inn; totNow+=g.now;
-    return '<tr><td>'+g.label+'</td><td style="text-align:right">฿'+fmtAmt(out)+'</td><td style="text-align:right">฿'+fmtAmt(inn)+'</td>' +
-      '<td style="text-align:right;color:'+col(net)+'">'+signed(net)+'</td><td style="text-align:right">฿'+fmtAmt(g.now)+'</td>' +
-      '<td style="text-align:right;font-weight:600;color:'+col(pl)+'">'+signed(pl)+'</td></tr>';
+    return {out: rows.reduce((s,p)=>s+Number(p.income||0),0),      // ถอนออกจากพอร์ต
+            inn: rows.reduce((s,p)=>s+Number(p.expense||0),0)};    // ฝากเข้าพอร์ต
+  };
+  const card = (label, out, inn, now, bold)=>{
+    const pl = out + now - inn;                                     // สูตรเดียว: มูลค่าตอนนี้ + ถอนสะสม − ฝากสะสม
+    const pct = inn>0 ? (pl/inn*100) : null;
+    const warn = (inn===0 && out>0) ? '<div style="font-size:10.5px;color:var(--amber);margin-top:6px;">ยังไม่มีรายการ "ฝากเข้า" — ผลนี้อาจคลาด</div>' : '';
+    const line = (k,v)=>'<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:3px 0;"><span style="color:var(--muted);">'+k+'</span><span>'+v+'</span></div>';
+    return '<div class="acc-card"'+(bold?' style="background:var(--bg);"':'')+'>' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;"><b style="font-size:14px;">'+label+'</b><span style="font-size:11px;color:var(--muted);">มูลค่าตอนนี้ ฿'+mAmt(now)+'</span></div>' +
+      line('ฝากเข้าสะสม','฿'+mAmt(inn)) + line('ถอนออกสะสม','฿'+mAmt(out)) +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--border);margin-top:6px;padding-top:8px;">' +
+        '<span style="font-size:12px;font-weight:600;">กำไร/ขาดทุนรวม</span>' +
+        '<span style="font-size:16px;font-weight:700;color:'+col(pl)+';">'+signed(pl)+(pct===null||HIDE?'':' <span style="font-size:11.5px;">('+(pct>=0?'+':'−')+Math.abs(pct).toFixed(1)+'%)</span>')+'</span></div>' + warn + '</div>';
+  };
+  let tOut=0,tIn=0,tNow=0;
+  const parts = groups.map(g=>{
+    const {out,inn} = rowsOf(g);
+    tOut+=out; tIn+=inn; tNow+=g.now;
+    return (out||inn||g.now) ? card(g.label,out,inn,g.now,false) : '';
   }).join('');
-  const tNet = totOut - totIn, tPl = totOut + totNow - totIn;
-  document.getElementById('portfolioAccSummary').innerHTML =
-    '<div style="overflow-x:auto;"><table class="tx"><thead><tr><th>พอร์ต</th><th style="text-align:right">ถอนออก</th><th style="text-align:right">ฝากเข้า</th>' +
-    '<th style="text-align:right">สุทธิ (ถอน − ฝาก)</th><th style="text-align:right">มูลค่าพอร์ตตอนนี้</th><th style="text-align:right">กำไร/ขาดทุนโดยประมาณ</th></tr></thead><tbody>' +
-    rowsHtml + '<tr style="font-weight:700"><td>รวมทุกพอร์ต</td><td style="text-align:right">฿'+fmtAmt(totOut)+'</td><td style="text-align:right">฿'+fmtAmt(totIn)+'</td>' +
-    '<td style="text-align:right;color:'+col(tNet)+'">'+signed(tNet)+'</td><td style="text-align:right">฿'+fmtAmt(totNow)+'</td>' +
-    '<td style="text-align:right;color:'+col(tPl)+'">'+signed(tPl)+'</td></tr></tbody></table></div>' +
-    '<div style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6;">' +
-    'ยอดถอน/ฝากนี้ไม่ได้นับเป็นรายรับ-รายจ่ายของเดือน<br>' +
-    'กำไร/ขาดทุนโดยประมาณ = ถอนออก + มูลค่าพอร์ตตอนนี้ − ฝากเข้า · มูลค่าพอร์ตดึงจากหน้า Overview (TFEX / SET / US Stock ใช้ค่าจากช่องของตัวเอง) ' +
-    'แม่นเมื่อประวัติฝากครบตั้งแต่ต้น ถ้ามีเงินตั้งต้นก่อนเริ่มบันทึกตัวเลขจะคลาดเคลื่อน</div>';
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;">' + parts + card('รวมทุกพอร์ต',tOut,tIn,tNow,true) + '</div>' +
+    '<div style="font-size:11px;color:var(--muted);margin-top:10px;line-height:1.6;">กำไร/ขาดทุนรวม = มูลค่าตอนนี้ + ถอนออกสะสม − ฝากเข้าสะสม · ฝาก/ถอนไม่นับเป็นรายรับ-รายจ่าย · แม่นเมื่อมีรายการฝากครบตั้งแต่ต้น</div>';
 }
-
+function renderPortfolioAccSummary(){
+  const el = document.getElementById('portfolioAccSummary'); if(el) el.innerHTML = pnlCardsHtml();
+}
 
 /* ---------- YEAR ARCHIVE (ปิดปี / ข้อมูลย้อนหลัง) ---------- */
 let archives = {}, archiveReady = true, archiveSelectedYear = null;
