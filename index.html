@@ -554,6 +554,23 @@ function fmtAmt(n){ return new Intl.NumberFormat('en-US',{maximumFractionDigits:
 function uid(){ return Math.random().toString(36).slice(2,10); }
 
 let errorToastTimer = null;
+// ป้ายแจ้งเตือนสำเร็จ (หายเอง 2.5 วินาที)
+let okToastTimer;
+function showToast(msg, sub, kind){
+  let t = document.getElementById('okToast');
+  if(!t){
+    t = document.createElement('div'); t.id = 'okToast';
+    t.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translate(-50%,12px);opacity:0;transition:opacity .2s,transform .2s;z-index:210;display:flex;align-items:center;gap:10px;background:#1e293b;color:#fff;border-radius:14px;padding:11px 16px;font-size:13.5px;max-width:92vw;box-shadow:0 8px 24px rgba(0,0,0,.25);pointer-events:none;';
+    document.body.appendChild(t);
+  }
+  const col = kind==='info' ? '#3b82f6' : '#22c55e';
+  t.innerHTML = '<span style="width:22px;height:22px;border-radius:50%;background:'+col+';display:grid;place-items:center;font-size:13px;flex:none;">✓</span><span>'+msg+(sub?'<span style="display:block;color:#94a3b8;font-size:12px;margin-top:1px;">'+sub+'</span>':'')+'</span>';
+  requestAnimationFrame(()=>{ t.style.opacity = '1'; t.style.transform = 'translate(-50%,0)'; });
+  clearTimeout(okToastTimer);
+  okToastTimer = setTimeout(()=>{ t.style.opacity = '0'; t.style.transform = 'translate(-50%,12px)'; }, 2500);
+}
+function accNameOf(id){ const a = accounts.find(x=>x.id===id); return a ? a.name : id; }
+
 function showError(msg){
   console.error(msg);
   let toast = document.getElementById('errorToast');
@@ -1269,7 +1286,7 @@ function openNwForm(mode){
         nwOpen = true;
       }
       m.remove();
-      wkMarkUpdated();
+      wkMarkUpdated(); showToast('อัปเดต Net Worth สำเร็จแล้ว');
       renderOverview();
       await saveNetworthSnapshot();
       refreshNwUi();
@@ -1693,6 +1710,7 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
   const amount = parseFloat(document.getElementById('fAmount').value);
   if(!amount || amount<=0){ submitBtn.disabled=false; return; }
   if(guardLocked(date)){ submitBtn.disabled=false; return; }
+  let okMsg = 'บันทึกสำเร็จแล้ว', okSub = '', okKind = 'ok';
 
   if(selectedType==='โอน'){
     const from = document.getElementById('fFrom').value;
@@ -1711,6 +1729,7 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
     const ovT = getPfOverride('fPfAdjust');
     await refreshTransferState();
     await applyPfOverride(ovT);
+    okMsg = 'โอนเงินสำเร็จแล้ว'; okSub = accNameOf(from)+' → '+accNameOf(to)+' · ฿'+fmtAmt(amount);
   }else{
     const category = document.getElementById('fCategory').value;
     const note = document.getElementById('fNote').value.trim();
@@ -1740,9 +1759,12 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
       Object.assign(old, {date, type:selectedType, amount, category, note, accountId: usedRpc ? eff : old.accountId});
       if(eff) bumpAccBalance(eff, selectedType, amount, 1);
       exitEditMode();
+      okMsg = 'แก้ไขรายการแล้ว'; okKind = 'info';
     }else{
       txns.push({id:txId, date, type:selectedType, amount, category, note, accountId:eff});
       if(eff) bumpAccBalance(eff, selectedType, amount, 1);
+      okMsg = selectedType==='จ่าย' ? 'จ่ายสำเร็จแล้ว' : 'บันทึกรายรับสำเร็จแล้ว';
+      okSub = '฿'+fmtAmt(amount)+(eff ? ' · '+accNameOf(eff) : '');
     }
     if(accId) saveTxAccDefault(accId);
   }
@@ -1752,6 +1774,7 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
   document.getElementById('fNote').value='';
   refreshPfAdjust();
   submitBtn.disabled=false;
+  showToast(okMsg, okSub, okKind);
 });
 
 function allMonthKeys(){
@@ -1914,6 +1937,7 @@ document.getElementById('pfForm').addEventListener('submit', async (e)=>{
   refreshPfAdjust();
   renderActionTab(); renderOverview(); renderPortfolioTab();
   btn.disabled = false;
+  showToast(dir==='out'?'ถอนจากพอร์ตสำเร็จแล้ว':'ฝากเข้าพอร์ตสำเร็จแล้ว', accNameOf(from)+' → '+accNameOf(to)+' · ฿'+fmtAmt(amount));
 });
 
 async function deletePortfolioLogRow(id){
@@ -2390,6 +2414,7 @@ async function deleteTransferWithReverse(id){
   const {error} = await sb.rpc('app_delete_transfer', {p_id: id});
   if(error){ showError('ลบการโอนไม่สำเร็จ (ไม่มีอะไรถูกเปลี่ยน): '+error.message); return; }
   await refreshTransferState();
+  showToast('ลบการโอนแล้ว','', 'info');
 }
 
 function renderMonthPanel(key){
@@ -2423,6 +2448,7 @@ function renderMonthPanel(key){
         if(error){ showError('delete tx: '+error.message); return; }
         if(_row && _row.accountId && txAccReady) bumpAccBalance(_row.accountId, _row.type, _row.amount, -1);
         txns = txns.filter(t=>t.id!==btn.dataset.id);
+        showToast('ลบรายการแล้ว','','info');
       }else{
         await deleteTransferWithReverse(btn.dataset.id);
       }
