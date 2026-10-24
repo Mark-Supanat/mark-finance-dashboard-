@@ -705,7 +705,7 @@ async function loadAllData(){
 
   txns = txRows.map(r=>({id:r.id, date:r.date, type:r.type, amount:Number(r.amount), category:r.category, note:r.note, accountId:r.account_id||null}));
   transfers = trfRows.map(r=>({id:r.id, date:r.date, from:r.from_account, to:r.to_account, amount:Number(r.amount), reserveId:r.reserve_id||null, reserveDir:r.reserve_dir||null}));
-  ptxns = pfRows.map(r=>({id:r.id, date:r.date, account:r.account, income:Number(r.income), expense:Number(r.expense), note:r.note, transferId:r.transfer_id||null}));
+  ptxns = pfRows.map(r=>({id:r.id, date:r.date, account:r.account, income:Number(r.income), expense:Number(r.expense), note:r.note, transferId:r.transfer_id||null, kind:r.kind||null}));
 
   // ไม่ seed รายจ่ายคงที่ซ้ำ: ถ้าผู้ใช้ลบจนว่าง รายการเริ่มต้นจะได้ไม่งอกกลับมา
   fixedCosts = fcRows.map(r=>({id:r.id, name:r.name, amount:Number(r.amount)}));
@@ -1668,9 +1668,13 @@ function renderPfAdjust(boxId, from, to, amount){
   const portId = fp ? from : to, key = portfolioAssetKey(portId), cur = Number(currentPortfolio[key]||0);
   const calc = fp ? cur-amount : cur+amount, id = boxId+'Val';
   const old = document.getElementById(id), keep = old && old.dataset.touched==='1' && old.dataset.port===portId ? old.value : null;
+  const oldK = document.getElementById(boxId+'Kind'), keepK = oldK ? oldK.value : '';
+  const kindHtml = fp ? '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;"><b>ประเภทเงินที่ถอน</b><select id="'+boxId+'Kind" style="width:240px;padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:var(--card);">' +
+    '<option value="">— เลือก —</option><option value="profit"'+(keepK==='profit'?' selected':'')+'>ถอนกำไร (นับเป็นรายรับ)</option><option value="principal"'+(keepK==='principal'?' selected':'')+'>ถอนต้นทุน / โอนเฉยๆ (ไม่นับ)</option></select></label>' : '';
   box.innerHTML = '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:2px 0 10px;font-size:12.5px;">' +
     '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><span>'+(fp?'ถอนจาก':'ฝากเข้า')+'พอร์ต '+portfolioAccLabel(portId)+' · ยอดตอนนี้ ฿'+fmtAmt(cur)+'</span><span style="color:var(--muted);">เว็บคำนวณหลัง'+(fp?'ถอน':'ฝาก')+' ฿'+fmtAmt(calc)+'</span></div>' +
     '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;"><b>ยอดพอร์ตจริงหลัง'+(fp?'ถอน':'ฝาก')+' (ตามแอปโบรกเกอร์ · ถอนหมดใส่ 0)</b><input type="number" step="any" min="0" placeholder="กรอกยอดจริง" id="'+id+'" value="'+(keep!==null?keep:'')+'" data-calc="'+calc+'" data-port="'+portId+'" data-key="'+key+'" style="width:150px;text-align:right;padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:var(--card);"></label>' +
+    kindHtml +
     '<div id="'+id+'Diff" style="margin-top:6px;font-size:12px;"></div></div>';
   const inp = document.getElementById(id);
   const upd = ()=>{
@@ -1683,6 +1687,12 @@ function renderPfAdjust(boxId, from, to, amount){
   };
   if(keep!==null) inp.dataset.touched='1';
   inp.addEventListener('input', ()=>{ inp.dataset.touched='1'; upd(); }); upd();
+}
+function pfKind(boxId){ const el = document.getElementById(boxId+'Kind'); return el && el.value ? el.value : null; }
+function pfKindInvalid(boxId){
+  const el = document.getElementById(boxId+'Kind'); if(!el) return false;
+  if(!el.value){ showError('เลือก "ประเภทเงินที่ถอน" ก่อนบันทึก (ถอนกำไร = นับเป็นรายรับ · ต้นทุน/โอนเฉยๆ = ไม่นับ)'); return true; }
+  return false;
 }
 // true = มีช่องยอดจริงแต่ยังว่าง/ติดลบ → ห้ามบันทึก (กันค่าเดาแบบเคส −97)
 function pfActualInvalid(boxId){
@@ -1774,14 +1784,15 @@ document.getElementById('txForm').addEventListener('submit', async (e)=>{
     const from = document.getElementById('fFrom').value;
     const to = document.getElementById('fTo').value;
     if(from===to){ showError('บัญชีต้นทางกับปลายทางต้องไม่ใช่บัญชีเดียวกัน'); submitBtn.disabled=false; return; }
-    if(pfActualInvalid('fPfAdjust')){ submitBtn.disabled=false; return; }
+    if(pfActualInvalid('fPfAdjust') || pfKindInvalid('fPfAdjust')){ submitBtn.disabled=false; return; }
     const warn = negativeWarnings(from, to, amount);
     if(warn.length && !confirm(warn.join('\n')+'\n\nยืนยันบันทึกต่อไหม?')){ submitBtn.disabled=false; return; }
     const resIdSel = document.getElementById('fReserve').value || null;
     const resDirSel = resIdSel ? document.getElementById('fReserveDir').value : null;
     const {error} = await sb.rpc('app_add_transfer', {
       p_id: uid(), p_date: date, p_from: from, p_to: to, p_amount: amount,
-      p_reserve_id: resIdSel, p_reserve_dir: resDirSel
+      p_reserve_id: resIdSel, p_reserve_dir: resDirSel,
+      ...(pfKind('fPfAdjust') ? {p_kind: pfKind('fPfAdjust')} : {})
     });
     if(error){ showError('บันทึกการโอนไม่สำเร็จ (ไม่มีอะไรถูกเปลี่ยน): '+error.message); submitBtn.disabled=false; return; }
     const ovT = getPfOverride('fPfAdjust');
@@ -1871,7 +1882,7 @@ async function importTx2025(){
   if(pf.length){
     const r2 = await sb.from('app_portfolio_transfers').insert(pf);
     if(r2.error) showError('นำเข้ารายรับ-รายจ่ายแล้ว แต่ถอนพอร์ต Forex ไม่สำเร็จ: '+r2.error.message);
-    else pf.forEach(r=>ptxns.push({id:r.id, date:r.date, account:r.account, income:r.income, expense:r.expense, note:r.note, transferId:null}));
+    else pf.forEach(r=>ptxns.push({id:r.id, date:r.date, account:r.account, income:r.income, expense:r.expense, note:r.note, transferId:null, kind:null}));
   }
   selectedYear = 2025; activeMonth = null;
   const ys = document.getElementById('yearSelect'); if(ys) ys.value = '2025';
@@ -1894,28 +1905,39 @@ function renderActionTab(){
 
 let fixedCosts = [];
 
+function tradeProfitOfMonth(key){
+  return ptxns.filter(p=>p.kind==='profit' && Number(p.income)>0 && monthKey(p.date)===key).reduce((a,p)=>a+Number(p.income),0);
+}
 function renderMonthlySummaryTable(){
   const year = selectedYear || Number(todayISO().slice(0,4));
   document.getElementById('monthlySummaryYearLabel').textContent = year;
   let rowsHtml = '';
-  let yIn=0, yOut=0;
+  let yIn=0, yPf=0, yOut=0;
+  const fmtNet = n=> n<0 ? '('+fmtAmt(Math.abs(n))+')' : fmtAmt(n);
   for(let m=1;m<=12;m++){
     const key = year+'-'+String(m).padStart(2,'0');
     const mt = txns.filter(t=>monthKey(t.date)===key);
     const inc = mt.filter(t=>t.type==='รับ').reduce((s,t)=>s+Number(t.amount),0);
     const out = mt.filter(t=>t.type==='จ่าย').reduce((s,t)=>s+Number(t.amount),0);
-    const net = inc-out;
-    yIn+=inc; yOut+=out;
+    const pf = tradeProfitOfMonth(key);
+    const net = inc+pf-out;
+    yIn+=inc; yPf+=pf; yOut+=out;
     rowsHtml += '<tr><td>'+THAI_MONTHS[m-1]+'</td><td style="text-align:right">'+fmtAmt(inc)+'</td>' +
+      '<td style="text-align:right;color:'+(pf>0?'var(--income)':'var(--muted)')+'">'+fmtAmt(pf)+'</td>' +
+      '<td style="text-align:right">'+fmtAmt(inc+pf)+'</td>' +
       '<td style="text-align:right">'+fmtAmt(out)+'</td>' +
-      '<td style="text-align:right;color:'+(net<0?'var(--expense)':'var(--income)')+'">'+(net<0?'('+fmtAmt(Math.abs(net))+')':fmtAmt(net))+'</td></tr>';
+      '<td style="text-align:right;color:'+(net<0?'var(--expense)':'var(--income)')+'">'+fmtNet(net)+'</td></tr>';
   }
-  const yNet = yIn-yOut;
+  const yNet = yIn+yPf-yOut;
   rowsHtml += '<tr style="font-weight:700"><td>รวมทั้งปี</td><td style="text-align:right">'+fmtAmt(yIn)+'</td>' +
+    '<td style="text-align:right;color:var(--income)">'+fmtAmt(yPf)+'</td>' +
+    '<td style="text-align:right">'+fmtAmt(yIn+yPf)+'</td>' +
     '<td style="text-align:right">'+fmtAmt(yOut)+'</td>' +
-    '<td style="text-align:right;color:'+(yNet<0?'var(--expense)':'var(--income)')+'">'+(yNet<0?'('+fmtAmt(Math.abs(yNet))+')':fmtAmt(yNet))+'</td></tr>';
+    '<td style="text-align:right;color:'+(yNet<0?'var(--expense)':'var(--income)')+'">'+fmtNet(yNet)+'</td></tr>';
+  const unk = ptxns.filter(p=>!p.kind && Number(p.income)>0 && p.date.slice(0,4)===String(year));
+  const unkHtml = unk.length ? '<div style="font-size:11.5px;color:var(--amber);margin-top:8px;line-height:1.6;">⚠ ปี '+year+' มีรายการถอนจากพอร์ต '+unk.length+' รายการ (฿'+fmtAmt(unk.reduce((a,p)=>a+Number(p.income),0))+') ที่ยังไม่ระบุประเภท — ยังไม่นับเป็นรายรับ · ไปเลือก "กำไร / ต้นทุน" ที่ตาราง "เงินโอนเข้า-ออกพอร์ตเทรด" ด้านล่าง</div>' : '';
   document.getElementById('monthlySummaryTable').innerHTML =
-    '<table class="tx"><thead><tr><th>เดือน</th><th style="text-align:right">รวมรายรับ</th><th style="text-align:right">รวมรายจ่าย</th><th style="text-align:right">สุทธิ</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>';
+    '<div style="overflow-x:auto;"><table class="tx"><thead><tr><th>เดือน</th><th style="text-align:right">รายรับอื่น</th><th style="text-align:right">กำไรเทรดที่ถอน</th><th style="text-align:right">รวมรายรับ</th><th style="text-align:right">รวมรายจ่าย</th><th style="text-align:right">สุทธิ</th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>' + unkHtml;
 }
 
 function renderActionCatBars(){
@@ -1977,14 +1999,15 @@ document.getElementById('pfForm').addEventListener('submit', async (e)=>{
   if(guardLocked(date)){ btn.disabled=false; return; }
   const from = dir==='out' ? port : acc;
   const to = dir==='out' ? acc : port;
-  if(pfActualInvalid('pfAdjust')){ btn.disabled=false; return; }
+  if(pfActualInvalid('pfAdjust') || pfKindInvalid('pfAdjust')){ btn.disabled=false; return; }
   const warn = negativeWarnings(from, to, amount);
   if(warn.length && !confirm(warn.join('\n')+'\n\nยืนยันบันทึกต่อไหม?')){ btn.disabled=false; return; }
   const resId = document.getElementById('pfReserve').value || null;
   const resDir = resId ? document.getElementById('pfReserveDir').value : null;
   const {error} = await sb.rpc('app_add_transfer', {
     p_id: uid(), p_date: date, p_from: from, p_to: to, p_amount: amount,
-    p_reserve_id: resId, p_reserve_dir: resDir, p_note: note || null
+    p_reserve_id: resId, p_reserve_dir: resDir, p_note: note || null,
+    ...(pfKind('pfAdjust') ? {p_kind: pfKind('pfAdjust')} : {})
   });
   if(error){ showError('บันทึกไม่สำเร็จ (ไม่มีอะไรถูกเปลี่ยน): '+error.message); btn.disabled=false; return; }
   const ovP = getPfOverride('pfAdjust');
@@ -2031,15 +2054,27 @@ function renderPortfolioFullLog(){
   const sorted = ptxns.slice().sort((a,b)=>a.date.localeCompare(b.date));
   const el = document.getElementById('portfolioFullLog');
   el.innerHTML =
-    '<div style="max-height:340px;overflow-y:auto;"><table class="tx"><thead><tr><th>วันที่</th><th>บัญชี</th><th>รายการ</th><th style="text-align:right">ถอนออก</th><th style="text-align:right">ฝากเข้า</th><th></th></tr></thead><tbody>' +
+    '<div style="max-height:340px;overflow-y:auto;"><table class="tx"><thead><tr><th>วันที่</th><th>บัญชี</th><th>รายการ</th><th style="text-align:right">ถอนออก</th><th style="text-align:right">ฝากเข้า</th><th>ประเภทที่ถอน</th><th></th></tr></thead><tbody>' +
     sorted.map(p=>{
       const d = p.date.slice(8,10)+'/'+p.date.slice(5,7)+'/'+p.date.slice(0,4);
       return '<tr><td style="color:var(--muted)">'+d+'</td><td>'+esc(p.account)+'</td><td>'+esc(p.note||'-')+'</td>' +
         '<td style="text-align:right;color:var(--income)">'+(p.income?'฿'+fmtAmt(p.income):'')+'</td>' +
         '<td style="text-align:right;color:var(--expense)">'+(p.expense?'฿'+fmtAmt(p.expense):'')+'</td>' +
-        '<td style="text-align:right"><button class="del-btn" data-pf="'+esc(p.id)+'" title="ลบ">×</button></td></tr>';
+        '<td>'+(p.income>0?'<select class="pf-kind" data-kind-id="'+esc(p.id)+'" style="font-size:11.5px;padding:3px 6px;border:1px solid '+(p.kind?'var(--border)':'var(--amber)')+';border-radius:6px;background:var(--card);"><option value="">ยังไม่ระบุ</option><option value="profit"'+(p.kind==='profit'?' selected':'')+'>กำไร (นับรายรับ)</option><option value="principal"'+(p.kind==='principal'?' selected':'')+'>ต้นทุน/โอน</option></select>':'')+'</td>' +
+        '<td style="text-align:right"><button class="del-btn" data-pf=""'+esc(p.id)+'" title="ลบ">×</button></td></tr>';
     }).join('') + '</tbody></table></div>';
   el.querySelectorAll('[data-pf]').forEach(btn=>{ btn.onclick = ()=>deletePortfolioLogRow(btn.dataset.pf); });
+  el.querySelectorAll('select.pf-kind').forEach(sel=>{
+    sel.onchange = async ()=>{
+      const row = ptxns.find(x=>x.id===sel.dataset.kindId); if(!row) return;
+      const v = sel.value || null, prev = row.kind;
+      const {error} = await sb.from('app_portfolio_transfers').update({kind:v}).eq('id', row.id);
+      if(error){ showError('บันทึกประเภทไม่สำเร็จ (ต้องรัน SQL ก่อนใช้งาน): '+error.message); sel.value = prev||''; return; }
+      row.kind = v;
+      sel.style.borderColor = v ? 'var(--border)' : 'var(--amber)';
+      renderMonthlySummaryTable();
+    };
+  });
 }
 
 function pnlCardsHtml(){
@@ -2302,17 +2337,18 @@ function exportYearToExcel(year){
   yTrf.forEach(t=> aoa1.push([t.date, accName(t.from), accName(t.to), t.amount]));
   aoa1.push([]);
   aoa1.push(['สรุปรายเดือน', year]);
-  aoa1.push(['เดือน','รวมรายรับ','รวมรายจ่าย','สุทธิ']);
-  let yIn=0, yOut=0;
+  aoa1.push(['เดือน','รายรับอื่น','กำไรเทรดที่ถอน','รวมรายรับ','รวมรายจ่าย','สุทธิ']);
+  let yIn=0, yOut=0, yPfProfit=0;
   for(let m=1;m<=12;m++){
     const key = year+'-'+String(m).padStart(2,'0');
     const mt = yTx.filter(t=>monthKey(t.date)===key);
     const inc = mt.filter(t=>t.type==='รับ').reduce((s,t)=>s+Number(t.amount),0);
     const out = mt.filter(t=>t.type==='จ่าย').reduce((s,t)=>s+Number(t.amount),0);
-    yIn+=inc; yOut+=out;
-    aoa1.push([THAI_MONTHS[m-1], inc, out, inc-out]);
+    const pfm = tradeProfitOfMonth(key);
+    yIn+=inc; yOut+=out; yPfProfit+=pfm;
+    aoa1.push([THAI_MONTHS[m-1], inc, pfm, inc+pfm, out, inc+pfm-out]);
   }
-  aoa1.push(['รวมทั้งปี', yIn, yOut, yIn-yOut]);
+  aoa1.push(['รวมทั้งปี', yIn, yPfProfit, yIn+yPfProfit, yOut, yIn+yPfProfit-yOut]);
   aoa1.push([]);
   aoa1.push(['สรุปรายจ่ายตามหมวดหมู่ (ทั้งปีที่เลือก)']);
   aoa1.push(['หมวดหมู่','รวมรายจ่าย']);
@@ -2446,7 +2482,7 @@ async function refreshTransferState(){
     currentPortfolio.total = OVERVIEW_ASSET_DEFS.map(d=>d.key).reduce((s,k)=>s+Number(currentPortfolio[k]||0),0);
   }
   transfers = trfRows.map(r=>({id:r.id, date:r.date, from:r.from_account, to:r.to_account, amount:Number(r.amount), reserveId:r.reserve_id||null, reserveDir:r.reserve_dir||null}));
-  ptxns = pfRows.map(r=>({id:r.id, date:r.date, account:r.account, income:Number(r.income), expense:Number(r.expense), note:r.note, transferId:r.transfer_id||null}));
+  ptxns = pfRows.map(r=>({id:r.id, date:r.date, account:r.account, income:Number(r.income), expense:Number(r.expense), note:r.note, transferId:r.transfer_id||null, kind:r.kind||null}));
  }catch(e){ showError('โหลดข้อมูลใหม่ไม่สำเร็จ ('+e.message+') — บันทึกสำเร็จแล้ว แต่ยอดบนจออาจยังไม่อัปเดต กรุณารีเฟรชหน้า'); }
 }
 
