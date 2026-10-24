@@ -57,6 +57,8 @@
   .welcome p{font-size:12.5px;color:var(--muted);margin:0;}
   .date-chip{font-size:12px;color:var(--muted);background:var(--card);border:1px solid var(--border);padding:7px 12px;border-radius:20px;white-space:nowrap;}
 
+  .trf-fold{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--blue-soft);color:var(--blue);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;cursor:pointer;}
+  .trf-body{margin-bottom:12px;padding-bottom:6px;border-bottom:1px dashed var(--border);}
   .stat-card.exp{position:relative;}
   .exp-bar{display:flex;height:6px;border-radius:99px;overflow:hidden;background:var(--border);margin-top:10px;}
   .exp-bar i{display:block;}
@@ -548,6 +550,7 @@ const SEED_RES = [
 
 let pfExtReady=true, selectedPfYear=null;
 let txns=[], ptxns=[], alloc=[], accounts=[], reserves=[], transfers=[];
+let trfOpen = false;                   // แถบพับรายการโอนในหน้ารายการประจำเดือน
 let expOpen = false;                   // dropdown แยกหมวดรายจ่ายเดือนนี้
 let HIDE = false;                       // ซ่อนตัวเลข (แสดงเป็น ******)
 const MASK = '******';
@@ -2459,19 +2462,34 @@ function renderMonthPanel(key){
   ].sort((a,b)=>a.date.localeCompare(b.date));
 
   if(items.length===0){ panel.innerHTML='<div class="empty-note">ยังไม่มีรายการเดือนนี้</div>'; return; }
-  let html = '<table class="tx"><thead><tr><th>วันที่</th><th>รายการ</th><th style="text-align:right">จำนวน</th><th></th></tr></thead><tbody>';
-  items.forEach(t=>{
+  const txItems = items.filter(t=>t.src==='tx'), trfItems = items.filter(t=>t.src==='trf');
+  const rowHtml = t=>{
     const d = t.date.slice(8,10)+'/'+t.date.slice(5,7);
     const cls = t.type==='รับ'?'income':(t.type==='จ่าย'?'expense':'transfer');
     const sign = t.type==='รับ'?'+':(t.type==='จ่าย'?'-':'');
-    html += '<tr><td style="color:var(--muted)">'+d+'</td><td>'+t.label+'</td>' +
+    return '<tr><td style="color:var(--muted)">'+d+'</td><td>'+t.label+'</td>' +
       '<td class="tx-amt '+cls+'" style="text-align:right">'+sign+'฿'+fmtAmt(t.amount)+'</td>' +
       '<td style="text-align:right;white-space:nowrap;">'+(t.src==='tx'?'<button class="del-btn edit-btn" data-id="'+esc(t.id)+'" title="แก้ไข">✎</button> ':'')+'<button class="del-btn" data-id="'+esc(t.id)+'" data-src="'+t.src+'">×</button></td></tr>';
-  });
-  html += '</tbody></table>';
+  };
+  const tblHead = '<table class="tx"><thead><tr><th>วันที่</th><th>รายการ</th><th style="text-align:right">จำนวน</th><th></th></tr></thead><tbody>';
+  let html = '';
+  if(trfItems.length){
+    const trfAll = transfers.filter(t=>monthKey(t.date)===key);
+    const toPf = trfAll.filter(t=>isPortfolioAcc(t.to) && !isPortfolioAcc(t.from)).reduce((a,t)=>a+Number(t.amount),0);
+    const fromPf = trfAll.filter(t=>isPortfolioAcc(t.from) && !isPortfolioAcc(t.to)).reduce((a,t)=>a+Number(t.amount),0);
+    const between = trfAll.filter(t=>!isPortfolioAcc(t.from) && !isPortfolioAcc(t.to)).reduce((a,t)=>a+Number(t.amount),0);
+    const parts = [];
+    if(toPf) parts.push('เติมพอร์ต ฿'+mAmt(toPf));
+    if(fromPf) parts.push('ถอนพอร์ต ฿'+mAmt(fromPf));
+    if(between) parts.push('ระหว่างบัญชี ฿'+mAmt(between));
+    html += '<div class="trf-fold" id="trfFold"><span>🔁 การโอนเดือนนี้ '+trfItems.length+' รายการ'+(parts.length?' · '+parts.join(' · '):'')+'</span><span>'+(trfOpen?'ซ่อน ▴':'ดู ▾')+'</span></div>';
+    if(trfOpen) html += '<div class="trf-body">'+tblHead+trfItems.map(rowHtml).join('')+'</tbody></table></div>';
+  }
+  html += txItems.length ? tblHead+txItems.map(rowHtml).join('')+'</tbody></table>' : '<div class="empty-note">ไม่มีรายรับ-รายจ่ายเดือนนี้</div>';
   const cur = todayISO().slice(0,7);
   if(key < cur) html += '<div class="closing-line">ปิดบัญชีเดือน '+monthLabel(key)+' แล้ว</div>';
   panel.innerHTML = html;
+  const tf = document.getElementById('trfFold'); if(tf) tf.onclick = ()=>{ trfOpen=!trfOpen; renderMonthPanel(key); };
   panel.querySelectorAll('.edit-btn').forEach(btn=>{ btn.onclick = ()=>startEditTx(btn.dataset.id); });
   panel.querySelectorAll('.del-btn[data-src]').forEach(btn=>{
     btn.onclick = async ()=>{
