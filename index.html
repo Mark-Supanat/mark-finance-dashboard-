@@ -57,6 +57,19 @@
   .welcome p{font-size:12.5px;color:var(--muted);margin:0;}
   .date-chip{font-size:12px;color:var(--muted);background:var(--card);border:1px solid var(--border);padding:7px 12px;border-radius:20px;white-space:nowrap;}
 
+  .stat-card.exp{position:relative;}
+  .exp-bar{display:flex;height:6px;border-radius:99px;overflow:hidden;background:var(--border);margin-top:10px;}
+  .exp-bar i{display:block;}
+  .exp-btn{margin-top:8px;display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:0;padding:4px 0 0;font:inherit;font-size:11.5px;color:var(--muted);cursor:pointer;}
+  .exp-btn:hover{color:var(--blue);}
+  .exp-pop{position:absolute;left:-1px;right:-1px;top:calc(100% - 6px);z-index:30;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 16px;box-shadow:0 12px 28px rgba(16,24,40,.12);display:none;}
+  .exp-pop.open{display:block;}
+  .exp-li{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:5px 0;}
+  .exp-li .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .exp-li .n{flex:1;color:var(--muted);}
+  .exp-li b{font-weight:600;}
+  .exp-li em{font-style:normal;color:var(--muted);font-size:11px;width:34px;text-align:right;}
+  .exp-link{display:block;margin-top:6px;padding-top:8px;border-top:1px solid var(--border);font-size:11.5px;color:var(--blue);cursor:pointer;}
   .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;}
   .stat-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;}
   .stat-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
@@ -535,6 +548,7 @@ const SEED_RES = [
 
 let pfExtReady=true, selectedPfYear=null;
 let txns=[], ptxns=[], alloc=[], accounts=[], reserves=[], transfers=[];
+let expOpen = false;                   // dropdown แยกหมวดรายจ่ายเดือนนี้
 let HIDE = false;                       // ซ่อนตัวเลข (แสดงเป็น ******)
 const MASK = '******';
 function mAmt(n){ return HIDE ? MASK : fmtAmt(n); }
@@ -1334,6 +1348,7 @@ function renderWeekly(){
   if(sum) sum.textContent = n+'/'+WK_ITEMS.length+(days===null?'':' · อัปเดตล่าสุด '+(days===0?'วันนี้':days+' วันที่แล้ว'));
 }
 /* ---------- NAV ---------- */
+document.addEventListener('click', ()=>{ if(!expOpen) return; expOpen=false; const p=document.getElementById('expPop'), a=document.getElementById('expArrow'); if(p) p.classList.remove('open'); if(a) a.textContent='▾'; });
 document.querySelectorAll('.nav-item').forEach(item=>{
   item.addEventListener('click', ()=>{
     document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
@@ -1384,17 +1399,36 @@ function renderOverview(){
     {k:'Total Net Worth', v:netWorth, icon:'◆', color:'blue', chg:null, sens:true, nw:true},
     {k:'เงินสดในบัญชี', v:accountsTotal(), icon:'🏦', color:'purple', chg:null, sens:true},
     {k:'รายรับเดือนนี้', v:income, icon:'↓', color:'teal', chg:null, forceUp:true, sens:true},
-    {k:'รายจ่ายเดือนนี้', v:expense, icon:'↑', color:'rose', chg:null, forceDown:true, sens:true},
+    {k:'รายจ่ายเดือนนี้', v:expense, icon:'↑', color:'rose', chg:null, forceDown:true, sens:true, exp:true},
   ];
+  const EXP_COLORS = {'อาหาร':'var(--amber)','เทนนิส':'var(--blue)','ค่าใช้จ่ายคงที่':'var(--purple)','อื่นๆ':'var(--slate)'};
+  const expRows = CATS.map(c=>({cat:c, amt: monthTx.filter(t=>t.type==='จ่าย' && t.category===c).reduce((a,t)=>a+Number(t.amount),0)}));
+  const expKnown = expRows.reduce((a,r)=>a+r.amt,0);
+  const expRest = expense - expKnown;                       // รายการที่หมวดไม่ตรง CATS → รวมเข้า "อื่นๆ"
+  if(Math.abs(expRest)>0.005){ const o = expRows.find(r=>r.cat==='อื่นๆ'); if(o) o.amt += expRest; }
+  const expPct = r=> expense>0 ? Math.round(r.amt/expense*100) : 0;
+  const expExtra = ()=>{
+    const bar = HIDE||expense<=0 ? '' : '<div class="exp-bar">'+expRows.map(r=>'<i style="width:'+(r.amt/expense*100)+'%;background:'+(EXP_COLORS[r.cat]||'var(--slate)')+'"></i>').join('')+'</div>';
+    const list = expRows.map(r=>'<div class="exp-li"><i class="dot" style="background:'+(EXP_COLORS[r.cat]||'var(--slate)')+'"></i><span class="n">'+r.cat+'</span><b>฿'+mAmt(r.amt)+'</b><em>'+(HIDE?'':expPct(r)+'%')+'</em></div>').join('');
+    return bar + '<button type="button" class="exp-btn" id="expBtn"><span>แยกตามหมวด</span><span id="expArrow">'+(expOpen?'▴':'▾')+'</span></button>' +
+      '<div class="exp-pop'+(expOpen?' open':'')+'" id="expPop">'+list+'<a class="exp-link" id="expGo">ดูรายการเดือนนี้ ›</a></div>';
+  };
   document.getElementById('statGrid').innerHTML = stats.map(s=>{
     let chgHtml = '';
     if(s.chg!==null && s.chg!==0){
       chgHtml = '<span class="stat-chg '+(s.chg>=0?'up':'down')+'">'+(s.chg>=0?'▲':'▼')+' '+Math.abs(s.chg).toFixed(1)+'%</span>';
     }
-    return '<div class="stat-card"><div class="stat-top"><div class="stat-icon" style="background:var(--'+s.color+'-soft);color:var(--'+s.color+')">'+s.icon+'</div>'+chgHtml+'</div>'+
-      '<div class="stat-k">'+s.k+'</div><div class="stat-v">฿'+(s.sens?mAmt(s.v):fmtAmt(s.v))+'</div>'+(s.nw?nwChgHtml():'')+'</div>';
+    return '<div class="stat-card'+(s.exp?' exp':'')+'"><div class="stat-top"><div class="stat-icon" style="background:var(--'+s.color+'-soft);color:var(--'+s.color+')">'+s.icon+'</div>'+chgHtml+'</div>'+
+      '<div class="stat-k">'+s.k+'</div><div class="stat-v">฿'+(s.sens?mAmt(s.v):fmtAmt(s.v))+'</div>'+(s.nw?nwChgHtml():'')+(s.exp?expExtra():'')+'</div>';
   }).join('');
   bindNwChg();
+  (function(){
+    const btn=document.getElementById('expBtn'), pop=document.getElementById('expPop'), arr=document.getElementById('expArrow');
+    if(!btn||!pop) return;
+    btn.onclick = e=>{ e.stopPropagation(); expOpen=!expOpen; pop.classList.toggle('open',expOpen); arr.textContent=expOpen?'▴':'▾'; };
+    pop.onclick = e=>e.stopPropagation();
+    const go=document.getElementById('expGo'); if(go) go.onclick=()=>{ expOpen=false; const nav=document.querySelector('.nav-item[data-view="action"]'); if(nav) nav.click(); };
+  })();
   scheduleNwSave();
 
   const bars = document.getElementById('cashflowBars');
