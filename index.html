@@ -59,6 +59,14 @@
 
   .trf-fold{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--blue-soft);color:var(--blue);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;cursor:pointer;}
   .trf-body{margin-bottom:12px;padding-bottom:6px;border-bottom:1px dashed var(--border);}
+  .cf-plot{position:relative;flex:1;width:100%;}
+  .cf-zero{position:absolute;left:0;right:0;border-top:1px dashed #CBD0D8;}
+  .cf-seg{position:absolute;left:50%;transform:translateX(-50%);width:62%;max-width:46px;display:flex;flex-direction:column;}
+  .cf-seg i{display:block;min-height:1px;}
+  .cf-dot{position:absolute;left:50%;width:10px;height:10px;border-radius:50%;background:var(--card);border:2.5px solid var(--text);transform:translate(-50%,-50%);z-index:2;}
+  .cf-net{font-size:10.5px;font-weight:600;margin-top:2px;white-space:nowrap;}
+  .cf-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:10.5px;color:var(--muted);margin-top:10px;}
+  .cf-legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:baseline;}
   .stat-card.exp{position:relative;}
   .exp-bar{display:flex;height:6px;border-radius:99px;overflow:hidden;background:var(--border);margin-top:10px;}
   .exp-bar i{display:block;}
@@ -94,7 +102,7 @@
   .eye-btn .eye-off{display:none;}
   .hide-amt .eye-btn .eye-on{display:none;} .hide-amt .eye-btn .eye-off{display:block;}
   .bars-wrap{position:relative;}
-  .bars.tall{height:190px;}
+  .bars.tall{height:250px;}
   .bar-col{cursor:pointer;border-radius:6px;}
   .bar-col:hover{background:var(--bg);}
   .bar-col.sel{background:var(--bg);}
@@ -335,6 +343,7 @@
         <div class="card">
           <h3>Overview <span class="sub">กระแสเงินสด (สุทธิ) · ชี้หรือแตะแท่งเพื่อดูยอด</span></h3>
           <div class="bars-wrap"><div class="bars tall" id="cashflowBars"></div><div id="cfTip"></div></div>
+          <div class="cf-legend"><span><i style="background:var(--income)"></i>รายรับ</span><span><i style="background:var(--amber)"></i>อาหาร</span><span><i style="background:var(--blue)"></i>เทนนิส</span><span><i style="background:var(--purple)"></i>ค่าใช้จ่ายคงที่</span><span><i style="background:var(--slate)"></i>อื่นๆ</span><span><i style="background:var(--card);border:2px solid var(--text);width:5px;height:5px"></i>สุทธิ (รับ − จ่าย)</span></div>
         </div>
         <div class="card">
           <h3>My Accounts <span class="sub">แตะที่ยอดเงินเพื่อแก้ไข</span></h3>
@@ -550,6 +559,7 @@ const SEED_RES = [
 
 let pfExtReady=true, selectedPfYear=null;
 let txns=[], ptxns=[], alloc=[], accounts=[], reserves=[], transfers=[];
+const EXP_COLORS = {'อาหาร':'var(--amber)','เทนนิส':'var(--blue)','ค่าใช้จ่ายคงที่':'var(--purple)','อื่นๆ':'var(--slate)'};
 let trfOpen = false;                   // แถบพับรายการโอนในหน้ารายการประจำเดือน
 let expOpen = false;                   // dropdown แยกหมวดรายจ่ายเดือนนี้
 let HIDE = false;                       // ซ่อนตัวเลข (แสดงเป็น ******)
@@ -1379,7 +1389,7 @@ function showCfTip(col){
   const hide = HIDE;
   const mm = Number(x.m.split('-')[1]);
   const v = n=> hide ? MASK : '฿'+fmtAmt(Math.abs(n));
-  tip.innerHTML = '<b>'+THAI_MONTHS[mm-1]+' '+x.m.slice(0,4)+'</b><br>สุทธิ '+(hide?'':(x.net<0?'−':'+'))+v(x.net)+'<br><span style="opacity:.8">รับ '+v(x.inc)+' · จ่าย '+v(x.exp)+'</span>';
+  tip.innerHTML = '<b>'+THAI_MONTHS[mm-1]+' '+x.m.slice(0,4)+'</b><br>สุทธิ '+(hide?'':(x.net<0?'−':'+'))+v(x.net)+'<br><span style="opacity:.8">รับ '+v(x.inc)+' · จ่าย '+v(x.exp)+'</span>'+(x.cats&&x.exp>0?'<div style="border-top:1px solid rgba(255,255,255,.2);margin:5px 0 3px;"></div>'+x.cats.filter(c=>c.amt>0).map(c=>'<div style="display:flex;justify-content:space-between;gap:14px;"><span><i style="display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;background:'+(EXP_COLORS[c.cat]||'var(--slate)')+'"></i>'+c.cat+'</span><span>'+v(c.amt)+'</span></div>').join(''):'');
   tip.style.display = 'block';
   const wr = wrap.getBoundingClientRect(), cr = col.getBoundingClientRect();
   let left = cr.left - wr.left + cr.width/2;
@@ -1404,7 +1414,6 @@ function renderOverview(){
     {k:'รายรับเดือนนี้', v:income, icon:'↓', color:'teal', chg:null, forceUp:true, sens:true},
     {k:'รายจ่ายเดือนนี้', v:expense, icon:'↑', color:'rose', chg:null, forceDown:true, sens:true, exp:true},
   ];
-  const EXP_COLORS = {'อาหาร':'var(--amber)','เทนนิส':'var(--blue)','ค่าใช้จ่ายคงที่':'var(--purple)','อื่นๆ':'var(--slate)'};
   const expRows = CATS.map(c=>({cat:c, amt: monthTx.filter(t=>t.type==='จ่าย' && t.category===c).reduce((a,t)=>a+Number(t.amount),0)}));
   const expKnown = expRows.reduce((a,r)=>a+r.amt,0);
   const expRest = expense - expKnown;                       // รายการที่หมวดไม่ตรง CATS → รวมเข้า "อื่นๆ"
@@ -1441,13 +1450,25 @@ function renderOverview(){
     const mt = txns.filter(t=>monthKey(t.date)===m);
     const inc = mt.filter(t=>t.type==='รับ').reduce((s,t)=>s+Number(t.amount),0);
     const exp = mt.filter(t=>t.type==='จ่าย').reduce((s,t)=>s+Number(t.amount),0);
-    return {m, net:inc-exp, inc, exp};
+    const cats = CATS.map(c=>({cat:c, amt: mt.filter(t=>t.type==='จ่าย' && t.category===c).reduce((s,t)=>s+Number(t.amount),0)}));
+    const rest = exp - cats.reduce((s,c)=>s+c.amt,0);          // หมวดไม่ตรง CATS → รวมใน "อื่นๆ"
+    if(Math.abs(rest)>0.005){ const o = cats.find(c=>c.cat==='อื่นๆ'); if(o) o.amt += rest; }
+    return {m, net:inc-exp, inc, exp, cats};
   });
-  const maxAbs = Math.max(1, ...netByMonth.map(x=>Math.abs(x.net)));
+  const maxInc = Math.max(0, ...netByMonth.map(x=>x.inc)), maxExp = Math.max(0, ...netByMonth.map(x=>x.exp));
+  const R = Math.max(1, maxInc + maxExp), zeroPct = maxInc/R*100;
+  const sgn = n=> (n<0?'−':'+')+Math.abs(Math.round(n)).toLocaleString();
   bars.innerHTML = netByMonth.map(x=>{
-    const h = Math.max(3, Math.round((Math.abs(x.net)/maxAbs)*100));
     const mm = Number(x.m.split('-')[1]);
-    return '<div class="bar-col" data-m="'+x.m+'"><div class="bar-fill'+(x.net<0?' neg':'')+'" style="height:'+h+'%"></div><div class="bar-label">'+THAI_MONTHS[mm-1]+(spanYears?" '"+x.m.slice(2,4):'')+'</div></div>';
+    const incH = x.inc/R*100, dotTop = zeroPct - x.net/R*100;
+    const catSegs = x.cats.map((c,i,arr)=>'<i style="height:'+(x.exp>0?c.amt/x.exp*100:0)+'%;background:'+EXP_COLORS[c.cat]+'"></i>').join('');
+    return '<div class="bar-col" data-m="'+x.m+'"><div class="cf-plot">' +
+      '<div class="cf-zero" style="top:'+zeroPct+'%"></div>' +
+      (x.inc>0 ? '<div class="cf-seg" style="top:'+(zeroPct-incH)+'%;height:'+incH+'%;"><i style="height:100%;background:var(--income);border-radius:5px 5px 0 0"></i></div>' : '') +
+      (x.exp>0 ? '<div class="cf-seg" style="top:'+zeroPct+'%;height:'+(x.exp/R*100)+'%;">'+catSegs+'</div>' : '') +
+      '<div class="cf-dot" style="top:'+dotTop+'%"></div></div>' +
+      '<div class="bar-label">'+THAI_MONTHS[mm-1]+(spanYears?" \'"+x.m.slice(2,4):'')+'</div>' +
+      (HIDE?'':'<div class="cf-net" style="color:'+(x.net<0?'var(--expense)':'var(--income)')+'">'+sgn(x.net)+'</div>') + '</div>';
   }).join('') || '<div class="empty-note" style="width:100%;text-align:center;align-self:center;">ยังไม่มีรายการ</div>';
   cashflowData = netByMonth;
   bars.querySelectorAll('.bar-col').forEach(c=>{
