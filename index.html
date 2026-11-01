@@ -2534,6 +2534,19 @@ function renderMonthPanel(key){
   };
   const tblHead = '<table class="tx"><thead><tr><th>วันที่</th><th>รายการ</th><th style="text-align:right">จำนวน</th><th></th></tr></thead><tbody>';
   let html = '';
+  {
+    const mExp = txns.filter(t=>monthKey(t.date)===key && t.type==='จ่าย');
+    const mTot = mExp.reduce((a,t)=>a+Number(t.amount),0);
+    if(mTot>0){
+      const rows = CATS.map(c=>({cat:c, amt: mExp.filter(t=>t.category===c).reduce((a,t)=>a+Number(t.amount),0)}));
+      const rest = mTot - rows.reduce((a,r)=>a+r.amt,0);                    // หมวดไม่ตรง CATS → รวมเข้า "อื่นๆ"
+      if(Math.abs(rest)>0.005){ const o = rows.find(r=>r.cat==='อื่นๆ'); if(o) o.amt += rest; }
+      html += '<div style="margin-bottom:12px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12px;"><span style="color:var(--muted);">รายจ่ายเดือนนี้แยกตามหมวด</span><b>฿'+fmtAmt(mTot)+'</b></div>' +
+        '<div class="exp-bar">'+rows.map(r=>'<i style="width:'+(r.amt/mTot*100)+'%;background:'+(EXP_COLORS[r.cat]||'var(--slate)')+'"></i>').join('')+'</div>' +
+        '<div style="display:flex;gap:6px 16px;flex-wrap:wrap;margin-top:8px;font-size:12px;">'+rows.map(r=>'<span style="white-space:nowrap;"><i class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:'+(EXP_COLORS[r.cat]||'var(--slate)')+'"></i><span style="color:var(--muted);">'+r.cat+'</span> <b>฿'+fmtAmt(r.amt)+'</b> <span style="color:var(--muted);font-size:11px;">'+Math.round(r.amt/mTot*100)+'%</span></span>').join('')+'</div></div>';
+    }
+  }
   if(trfItems.length){
     const trfAll = transfers.filter(t=>monthKey(t.date)===key);
     const toPf = trfAll.filter(t=>isPortfolioAcc(t.to) && !isPortfolioAcc(t.from)).reduce((a,t)=>a+Number(t.amount),0);
