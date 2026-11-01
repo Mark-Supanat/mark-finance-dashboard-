@@ -2655,7 +2655,7 @@ function pfColHead(c){
   else if(a.label && a.label!==monthLabel(a._ym)) sub = a.label;
   else if(a._ym.endsWith('-01')) sub = 'ต้นปี';
   if(a.note) sub += (sub?' · ':'')+a.note;
-  return esc(monthLabel(a._ym)) + (sub?'<br><span style="font-weight:400;color:var(--muted);font-size:9.5px;">'+esc(sub)+'</span>':'');
+  return esc(monthLabel(a._ym)) + (sub?'<br><span title="'+esc(sub)+'" style="display:inline-block;max-width:104px;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;font-weight:400;color:'+(a.note?'var(--amber)':'var(--muted)')+';font-size:9.5px;">'+esc(sub)+'</span>':'');
 }
 
 function renderPfYearSelector(){
@@ -2752,6 +2752,12 @@ function renderAllocHistoryTable(){
     html += '<td style="text-align:right;font-size:11px;'+(c.ref?refBg:'')+'" class="tx-amt '+cls+'">'+signedNum(real)+' ('+(pct>=0?'+':'')+pct.toFixed(1)+'%)'+
       (a.external ? '<br><span style="color:var(--muted);font-weight:400;">ก่อนหักเงินนอก '+signedNum(diff)+'</span>' : '')+'</td>';
   });
+  html += '</tr>';
+  html += '<tr><td style="'+sticky+'color:var(--muted);font-size:11px;">หมายเหตุ <span style="font-size:10px;">(เช่น เงินเข้า 100K)</span></td>';
+  cols.forEach(c=>{
+    html += c.ref ? '<td style="text-align:right;font-size:11px;'+refBg+'color:var(--muted);">'+esc(c.a.note||'')+'</td>'
+      : '<td style="text-align:right;"><input type="text" class="pf-note" maxlength="60" style="text-align:right;width:100px;font-size:11px;" value="'+esc(c.a.note||'')+'" data-note-id="'+esc(c.a.id)+'" placeholder="พิมพ์โน้ต"></td>';
+  });
   html += '</tr></tbody></table>';
   wrap.innerHTML = html;
 
@@ -2771,6 +2777,17 @@ function renderAllocHistoryTable(){
       const {error} = await sb.from('app_portfolio_allocations').update(patch).eq('id', a.id);
       if(error) showError('update allocation: '+error.message+(key==='external'?' (ถ้ายังไม่ได้รันไฟล์ e1_portfolio_external.sql ใน Supabase ให้รันก่อน)':(key==='tfex'?' (ต้องรันไฟล์ g1_tfex_holdings.sql ใน Supabase ก่อน)':'')));
       renderAllocHistoryTable(); renderPortfolioBars(); renderOverview();
+    });
+  });
+  wrap.querySelectorAll('input.pf-note').forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const a = alloc.find(x=>x.id===inp.dataset.noteId); if(!a) return;
+      if(guardLocked(a._ym)){ renderAllocHistoryTable(); return; }
+      const v = inp.value.trim() || null;
+      const {error} = await sb.from('app_portfolio_allocations').update({note:v}).eq('id', a.id);
+      if(error){ showError('บันทึกหมายเหตุไม่สำเร็จ: '+error.message); return; }
+      a.note = v;
+      renderAllocHistoryTable();
     });
   });
   wrap.querySelectorAll('.del-btn[data-del]').forEach(btn=>{
