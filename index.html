@@ -67,6 +67,10 @@
   .cf-net{font-size:10.5px;font-weight:600;margin-top:2px;white-space:nowrap;}
   .cf-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:10.5px;color:var(--muted);margin-top:10px;}
   .cf-legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:baseline;}
+  .act-seg{display:flex;gap:8px;margin:0 0 14px;flex-wrap:wrap;}
+  .act-seg button{padding:9px 18px;border-radius:10px;border:1px solid var(--border);background:var(--card);font:inherit;font-size:13px;color:var(--muted);cursor:pointer;}
+  .act-seg button:hover{color:var(--text);}
+  .act-seg button.on{background:var(--blue);color:#fff;border-color:var(--blue);font-weight:600;}
   .stat-card.exp{position:relative;}
   .exp-bar{display:flex;height:6px;border-radius:99px;overflow:hidden;background:var(--border);margin-top:10px;}
   .exp-bar i{display:block;}
@@ -382,8 +386,13 @@
         </div>
         <button type="button" class="submit" id="exportExcelBtn" style="width:auto;padding:9px 16px;">⬇ Export เป็น Excel</button>
       </div>
+      <div class="act-seg" id="actSeg" style="margin-top:14px;">
+        <button type="button" data-actab="inc" class="on">💵 รายรับ-รายจ่าย</button>
+        <button type="button" data-actab="pf">📈 พอร์ต / โอนเงิน</button>
+      </div>
       <div id="yearLockBanner"></div>
       <div id="txImportBanner"></div>
+      <div id="actTabInc">
       <div class="card">
         <h3>เพิ่มรายการ</h3>
         <form id="txForm">
@@ -464,7 +473,9 @@
           </form>
         </div>
       </div>
+      </div><!-- /actTabInc -->
 
+      <div id="actTabPf" style="display:none;">
       <div class="card">
         <h3>เงินโอนเข้า-ออกพอร์ตเทรด <span class="sub">Forex / TFEX / SET / US Stock</span></h3>
         <form id="pfForm" style="margin:12px 0 16px;padding-bottom:14px;border-bottom:1px solid var(--border);">
@@ -494,6 +505,7 @@
         <h3>สรุปตามบัญชี <span class="sub">พอร์ตเทรด</span></h3>
         <div id="portfolioAccSummary"></div>
       </div>
+      </div><!-- /actTabPf -->
     </div>
 
     <!-- ARCHIVE -->
@@ -560,6 +572,16 @@ const SEED_RES = [
 let pfExtReady=true, selectedPfYear=null;
 let txns=[], ptxns=[], alloc=[], accounts=[], reserves=[], transfers=[];
 const EXP_COLORS = {'อาหาร':'var(--amber)','เทนนิส':'var(--blue)','ค่าใช้จ่ายคงที่':'var(--purple)','อื่นๆ':'var(--slate)'};
+let actTab = 'inc';
+try{ const t = localStorage.getItem('actTab'); if(t==='inc'||t==='pf') actTab = t; }catch(e){}
+function setActTab(t){
+  actTab = (t==='pf') ? 'pf' : 'inc';
+  try{ localStorage.setItem('actTab', actTab); }catch(e){}
+  const a = document.getElementById('actTabInc'), b = document.getElementById('actTabPf');
+  if(a) a.style.display = actTab==='inc' ? '' : 'none';
+  if(b) b.style.display = actTab==='pf' ? '' : 'none';
+  document.querySelectorAll('#actSeg button').forEach(x=>x.classList.toggle('on', x.dataset.actab===actTab));
+}
 let trfOpen = false;                   // แถบพับรายการโอนในหน้ารายการประจำเดือน
 let expOpen = false;                   // dropdown แยกหมวดรายจ่ายเดือนนี้
 let HIDE = false;                       // ซ่อนตัวเลข (แสดงเป็น ******)
@@ -1439,7 +1461,7 @@ function renderOverview(){
     if(!btn||!pop) return;
     btn.onclick = e=>{ e.stopPropagation(); expOpen=!expOpen; pop.classList.toggle('open',expOpen); arr.textContent=expOpen?'▴':'▾'; };
     pop.onclick = e=>e.stopPropagation();
-    const go=document.getElementById('expGo'); if(go) go.onclick=()=>{ expOpen=false; const nav=document.querySelector('.nav-item[data-view="action"]'); if(nav) nav.click(); };
+    const go=document.getElementById('expGo'); if(go) go.onclick=()=>{ expOpen=false; setActTab('inc'); const nav=document.querySelector('.nav-item[data-view="action"]'); if(nav) nav.click(); };
   })();
   scheduleNwSave();
 
@@ -1985,6 +2007,8 @@ document.getElementById('fixedCostForm').addEventListener('submit', async (e)=>{
 document.getElementById('pfDir').addEventListener('change', ()=>{
   document.getElementById('pfAccLabel').textContent = document.getElementById('pfDir').value==='out' ? 'เงินเข้าบัญชี' : 'ตัดจากบัญชี';
 });
+document.querySelectorAll('#actSeg button').forEach(b=>{ b.onclick = ()=>setActTab(b.dataset.actab); });
+setActTab(actTab);
 document.getElementById('pfForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
   const btn = document.getElementById('pfSubmit');
@@ -2050,10 +2074,32 @@ async function deletePortfolioLogRow(id){
   renderActionTab(); renderOverview(); renderPortfolioTab();
 }
 
+function pfYearStripHtml(year){
+  const rows = ptxns.filter(p=>p.date.slice(0,4)===String(year));
+  const groups = [
+    {label:'Forex', f:p=>p.account==='Forex'}, {label:'TFEX', f:p=>['TFEX','S50','MGO'].includes(p.account)},
+    {label:'SET', f:p=>p.account==='SET'}, {label:'US Stock', f:p=>p.account==='US Stock'},
+    {label:'อื่นๆ', f:p=>!['Forex','TFEX','S50','MGO','SET','US Stock'].includes(p.account)}
+  ];
+  const sum = (arr,k,cond)=>arr.filter(cond||(()=>true)).reduce((a,p)=>a+Number(p[k]||0),0);
+  const data = groups.map(g=>{
+    const r = rows.filter(g.f);
+    return {label:g.label, dep:sum(r,'expense'), prof:sum(r,'income',p=>p.kind==='profit'), prin:sum(r,'income',p=>p.kind==='principal'), unk:sum(r,'income',p=>!p.kind)};
+  }).filter(d=>d.dep||d.prof||d.prin||d.unk);
+  if(!data.length) return '';
+  const t = data.reduce((a,d)=>({label:'รวม', dep:a.dep+d.dep, prof:a.prof+d.prof, prin:a.prin+d.prin, unk:a.unk+d.unk}),{dep:0,prof:0,prin:0,unk:0});
+  const cell = (n,c)=>'<td style="text-align:right;'+(c?'color:'+c+';':'')+'">'+(n?'฿'+fmtAmt(n):'<span style="color:var(--muted)">–</span>')+'</td>';
+  const row = (d,b)=>'<tr'+(b?' style="font-weight:700"':'')+'><td>'+d.label+'</td>'+cell(d.dep,'var(--expense)')+cell(d.prof,'var(--income)')+cell(d.prin)+cell(d.unk,d.unk?'var(--amber)':'')+'</tr>';
+  return '<div style="margin-bottom:14px;"><div style="font-size:12px;color:var(--muted);margin-bottom:6px;">สรุปปี '+year+' · เงินเข้า-ออกพอร์ต</div>' +
+    '<div style="overflow-x:auto;"><table class="tx"><thead><tr><th>พอร์ต</th><th style="text-align:right">เติมเข้า</th><th style="text-align:right">ถอนกำไร</th><th style="text-align:right">ถอนต้นทุน/โอน</th><th style="text-align:right">ยังไม่ระบุ</th></tr></thead><tbody>' +
+    data.map(d=>row(d,false)).join('') + (data.length>1?row(t,true):'') + '</tbody></table></div></div>';
+}
 function renderPortfolioFullLog(){
-  const sorted = ptxns.slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const year = selectedYear || Number(todayISO().slice(0,4));
+  const sorted = ptxns.filter(p=>p.date.slice(0,4)===String(year)).sort((a,b)=>b.date.localeCompare(a.date));   // ใหม่สุดไว้บน
   const el = document.getElementById('portfolioFullLog');
-  el.innerHTML =
+  const emptyHtml = sorted.length ? '' : '<div class="empty-note">ปี '+year+' ยังไม่มีรายการเงินเข้า-ออกพอร์ต</div>';
+  el.innerHTML = pfYearStripHtml(year) + (sorted.length ? '<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">รายการปี '+year+' · '+sorted.length+' รายการ · ใหม่สุดอยู่บน</div>' : '') + emptyHtml + (sorted.length ?
     '<div style="max-height:340px;overflow-y:auto;"><table class="tx"><thead><tr><th>วันที่</th><th>บัญชี</th><th>รายการ</th><th style="text-align:right">ถอนออก</th><th style="text-align:right">ฝากเข้า</th><th>ประเภทที่ถอน</th><th></th></tr></thead><tbody>' +
     sorted.map(p=>{
       const d = p.date.slice(8,10)+'/'+p.date.slice(5,7)+'/'+p.date.slice(0,4);
@@ -2061,8 +2107,8 @@ function renderPortfolioFullLog(){
         '<td style="text-align:right;color:var(--income)">'+(p.income?'฿'+fmtAmt(p.income):'')+'</td>' +
         '<td style="text-align:right;color:var(--expense)">'+(p.expense?'฿'+fmtAmt(p.expense):'')+'</td>' +
         '<td>'+(p.income>0?'<select class="pf-kind" data-kind-id="'+esc(p.id)+'" style="font-size:11.5px;padding:3px 6px;border:1px solid '+(p.kind?'var(--border)':'var(--amber)')+';border-radius:6px;background:var(--card);"><option value="">ยังไม่ระบุ</option><option value="profit"'+(p.kind==='profit'?' selected':'')+'>กำไร (นับรายรับ)</option><option value="principal"'+(p.kind==='principal'?' selected':'')+'>ต้นทุน/โอน</option></select>':'')+'</td>' +
-        '<td style="text-align:right"><button class="del-btn" data-pf=""'+esc(p.id)+'" title="ลบ">×</button></td></tr>';
-    }).join('') + '</tbody></table></div>';
+        '<td style="text-align:right"><button class="del-btn" data-pf="'+esc(p.id)+'" title="ลบ">×</button></td></tr>';
+    }).join('') + '</tbody></table></div>' : '');
   el.querySelectorAll('[data-pf]').forEach(btn=>{ btn.onclick = ()=>deletePortfolioLogRow(btn.dataset.pf); });
   el.querySelectorAll('select.pf-kind').forEach(sel=>{
     sel.onchange = async ()=>{
