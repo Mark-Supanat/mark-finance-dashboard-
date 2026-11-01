@@ -2238,7 +2238,7 @@ function renderArchive(){
     return '<div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;'+(archiveSelectedYear===y?'background:var(--bg);':'')+'">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
         '<div><b style="font-size:16px;">'+y+'</b> <span style="font-size:11.5px;color:var(--muted);margin-left:6px;">'+badge+'</span></div>' +
-        '<div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="small-btn" data-act="view" data-y="'+y+'">ดูรายละเอียด</button>' + mainBtn +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="small-btn" data-act="view" data-y="'+y+'">'+(archiveSelectedYear===y?'ซ่อนรายละเอียด ▴':'ดูรายละเอียด ▾')+'</button>' + mainBtn +
         '<button class="small-btn" data-act="xlsx" data-y="'+y+'">⬇ Excel</button></div>' +
       '</div>' +
       '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;">' +
@@ -2250,7 +2250,10 @@ function renderArchive(){
   wrap.querySelectorAll('[data-act]').forEach(b=>{
     b.onclick = ()=>{
       const y = b.dataset.y, act = b.dataset.act;
-      if(act==='view'){ archiveSelectedYear = y; renderArchive(); document.getElementById('archiveDetail').scrollIntoView({behavior:'smooth'}); }
+      if(act==='view'){
+        if(archiveSelectedYear===y){ archiveSelectedYear = null; renderArchive(); }                 // กดซ้ำ = ซ่อน
+        else{ archiveSelectedYear = y; renderArchive(); document.getElementById('archiveDetail').scrollIntoView({behavior:'smooth'}); }
+      }
       else if(act==='close') closeYear(y);
       else if(act==='unlock') unlockYear(y);
       else if(act==='remove') removeYearArchive(y);
@@ -2269,7 +2272,7 @@ function renderArchiveDetail(y){
   const colr = (n)=> n<0 ? 'var(--expense)' : (n>0 ? 'var(--income)' : 'var(--muted)');
   let html = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">' +
     '<h3 style="margin:0;">สรุปปี '+esc(y)+' <span class="sub" style="margin-left:8px;">'+(a ? (a.locked?'🔒 ปิดแล้ว ':'ปิดไว้เมื่อ ')+thDate(a.closedAt) : 'ยังเปิดอยู่ · ตัวเลขสด')+'</span></h3>' +
-    '<div class="no-print" style="display:flex;gap:6px;"><button class="small-btn" id="arcXlsx">⬇ Excel</button><button class="small-btn" id="arcPdf">🖨 บันทึกเป็น PDF</button></div></div>' +
+    '<div class="no-print" style="display:flex;gap:6px;"><button class="small-btn" id="arcXlsx">⬇ Excel</button><button class="small-btn" id="arcPdf">🖨 บันทึกเป็น PDF</button><button class="small-btn" id="arcClose">✕ ซ่อน</button></div></div>' +
     '<div style="display:flex;gap:22px;flex-wrap:wrap;margin:14px 0;font-size:13px;">' +
       '<span>รายรับ <b style="color:var(--income)">฿'+fmtAmt(st.income)+'</b></span><span>รายจ่าย <b style="color:var(--expense)">฿'+fmtAmt(st.expense)+'</b></span>' +
       '<span>สุทธิ <b style="color:'+colr(st.net)+'">'+signedBaht(st.net)+'</b></span><span style="color:var(--muted)">'+st.txCount+' รายการ · โอน '+st.trfCount+' ครั้ง</span></div>';
@@ -2317,6 +2320,7 @@ function renderArchiveDetail(y){
     '</details></div>';
   el.innerHTML = html;
   document.getElementById('arcXlsx').onclick = ()=>exportYearToExcel(Number(y));
+  document.getElementById('arcClose').onclick = ()=>{ archiveSelectedYear = null; renderArchive(); const top = document.getElementById('archiveYears'); if(top) top.scrollIntoView({behavior:'smooth', block:'start'}); };
   const pfOpen = document.getElementById('arcPfOpen');
   if(pfOpen) pfOpen.onclick = ()=>{ selectedPfYear = Number(y); const nav = document.querySelector('.nav-item[data-view="portfolio"]'); if(nav) nav.click(); };
   document.getElementById('arcPdf').onclick = ()=>{ el.querySelectorAll('details').forEach(d=>d.open=true); window.print(); };
