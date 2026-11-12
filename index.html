@@ -352,6 +352,17 @@
         <div class="card">
           <h3>My Accounts <span class="sub">แตะที่ยอดเงินเพื่อแก้ไข</span></h3>
           <div class="acc-list vert" id="accList"></div>
+          <div style="margin-top:12px;">
+            <button type="button" class="small-btn" id="accAddBtn">+ เพิ่มบัญชี (เช่น เงินสด)</button>
+            <form id="accAddForm" style="display:none;margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--bg);">
+              <div class="form-row">
+                <div><label class="field-label">ชื่อบัญชี</label><input type="text" id="accAddName" placeholder="เช่น เงินสด" maxlength="30" required></div>
+                <div><label class="field-label">ยอดตอนนี้ (บาท)</label><input type="number" id="accAddBal" step="0.01" placeholder="0" value="0"></div>
+              </div>
+              <div class="form-row"><div><label class="field-label">ใช้ทำอะไร (ไม่บังคับ)</label><input type="text" id="accAddPurpose" placeholder="เช่น เงินสดในมือ (ธนบัตร)" maxlength="60"></div></div>
+              <div style="display:flex;gap:8px;"><button type="submit" class="small-btn" id="accAddSave">บันทึกบัญชี</button><button type="button" class="small-btn" id="accAddCancel">ยกเลิก</button></div>
+            </form>
+          </div>
         </div>
       </div>
 
@@ -1536,6 +1547,7 @@ function brandLoad(img){
 // ไอคอนของบัญชี/พอร์ต: crypto = Bitcoin, แบงก์/SET/TFEX = โลโก้, อื่น ๆ = ตัวอักษรย่อในกล่องสี
 function brandIcon(name, bg, ini, isCrypto){
   if(isCrypto) return '<div class="acc-icon btc">'+BTC_SVG+'</div>';
+  if(/เงินสด|^\s*cash\b/i.test(name||'')) return '<div class="acc-icon" style="background:var(--teal);font-size:15px;">💵</div>';
   const kb = /^\s*k\s*-?\s*bank\s*(\d+)?/i.exec(name||'');   // KBank → ตัว K ขาวบนพื้นเขียว (K1, K2)
   if(kb) return '<div class="acc-icon" style="background:#138F2D;">K'+(kb[1]||'')+'</div>';
   const br = brandOf(name);
@@ -2006,6 +2018,29 @@ document.getElementById('fixedCostForm').addEventListener('submit', async (e)=>{
 
 document.getElementById('pfDir').addEventListener('change', ()=>{
   document.getElementById('pfAccLabel').textContent = document.getElementById('pfDir').value==='out' ? 'เงินเข้าบัญชี' : 'ตัดจากบัญชี';
+});
+document.getElementById('accAddBtn').onclick = ()=>{
+  const f = document.getElementById('accAddForm'); f.style.display = f.style.display==='none' ? 'block' : 'none';
+  if(f.style.display==='block') document.getElementById('accAddName').focus();
+};
+document.getElementById('accAddCancel').onclick = ()=>{ document.getElementById('accAddForm').style.display='none'; };
+document.getElementById('accAddForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById('accAddSave'); btn.disabled = true;
+  const name = document.getElementById('accAddName').value.trim();
+  const purpose = document.getElementById('accAddPurpose').value.trim() || (/เงินสด|cash/i.test(name) ? 'เงินสดในมือ (ธนบัตร)' : '');
+  const balance = parseFloat(document.getElementById('accAddBal').value) || 0;
+  if(!name){ btn.disabled=false; return; }
+  if(accounts.some(a=>a.name.trim().toLowerCase()===name.toLowerCase())){ showError('มีบัญชีชื่อ "'+name+'" อยู่แล้ว'); btn.disabled=false; return; }
+  let id = (/เงินสด|^cash$/i.test(name) && !accounts.some(a=>a.id==='cash')) ? 'cash' : 'acc-'+Date.now().toString(36);
+  const colorsUsed = accounts.map(a=>a.color), color = ['teal','rose','slate','blue','purple','amber'].find(c=>!colorsUsed.includes(c)) || 'teal';
+  const {error} = await sb.from('app_accounts').insert({id, name, purpose, color, balance});
+  if(error){ showError('เพิ่มบัญชีไม่สำเร็จ: '+error.message); btn.disabled=false; return; }
+  accounts.push({id, name, purpose, color, balance, allocations:[]});
+  document.getElementById('accAddForm').reset(); document.getElementById('accAddForm').style.display='none';
+  populateAccountSelects(); renderTxAccChips(); renderOverview();
+  btn.disabled = false;
+  showToast('เพิ่มบัญชีแล้ว', name+' · ฿'+fmtAmt(balance));
 });
 document.querySelectorAll('#actSeg button').forEach(b=>{ b.onclick = ()=>setActTab(b.dataset.actab); });
 setActTab(actTab);
